@@ -20,6 +20,30 @@ const dialogVisible = ref(false);
 const editing = ref<TrackedCard | null>(null);
 const rows = computed(() => sortForDisplay(cards.value));
 
+const PREVIEW_WIDTH = 244;
+const PREVIEW_HEIGHT = Math.round(PREVIEW_WIDTH * (680 / 488));
+const preview = ref<{ src: string; alt: string; top: number; left: number } | null>(null);
+
+// Stored images are Scryfall's "small" size (146px): swap to "normal" (488px) so the enlarged preview stays sharp.
+function largeImage(url: string): string {
+  return url.replace('/small/', '/normal/');
+}
+
+function showPreview(event: MouseEvent, card: TrackedCard) {
+  if (!card.imageUrl) return;
+  const rect = (event.currentTarget as HTMLElement).getBoundingClientRect();
+  const margin = 8;
+  const top = Math.min(
+    Math.max(margin, rect.top + rect.height / 2 - PREVIEW_HEIGHT / 2),
+    window.innerHeight - PREVIEW_HEIGHT - margin,
+  );
+  preview.value = { src: largeImage(card.imageUrl), alt: card.name, top, left: rect.right + 12 };
+}
+
+function hidePreview() {
+  preview.value = null;
+}
+
 async function load() {
   loading.value = true;
   try {
@@ -94,7 +118,14 @@ onMounted(load);
     <template #empty>No tracked cards. Add one with "Add card".</template>
     <Column header="" style="width: 64px">
       <template #body="{ data }">
-        <img v-if="data.imageUrl" :src="data.imageUrl" :alt="data.name" class="row-thumb" />
+        <img
+          v-if="data.imageUrl"
+          :src="data.imageUrl"
+          :alt="data.name"
+          class="row-thumb"
+          @mouseenter="showPreview($event, data)"
+          @mouseleave="hidePreview"
+        />
       </template>
     </Column>
     <Column field="name" header="Card">
@@ -158,6 +189,16 @@ onMounted(load);
   </DataTable>
 
   <CardDialog v-model:visible="dialogVisible" :card="editing" @saved="onSaved" />
+
+  <Teleport to="body">
+    <img
+      v-if="preview"
+      :src="preview.src"
+      :alt="preview.alt"
+      class="card-preview"
+      :style="{ top: `${preview.top}px`, left: `${preview.left}px`, width: `${PREVIEW_WIDTH}px` }"
+    />
+  </Teleport>
 </template>
 
 <style scoped>
@@ -169,5 +210,15 @@ onMounted(load);
 .row-actions {
   display: flex;
   align-items: center;
+}
+.row-thumb {
+  cursor: zoom-in;
+}
+.card-preview {
+  position: fixed;
+  z-index: 1100;
+  border-radius: 12px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
+  pointer-events: none;
 }
 </style>
