@@ -16,6 +16,7 @@ const envFile = resolve(root, '.env');
 if (existsSync(envFile)) process.loadEnvFile(envFile);
 
 const port = Number(process.env.PORT ?? 3000);
+const host = process.env.HOST ?? '127.0.0.1';
 const db = openDb(process.env.DB_PATH ? resolve(root, process.env.DB_PATH) : resolve(root, 'data/ctzero.db'));
 const orphans = failOrphanRuns(db);
 
@@ -40,7 +41,7 @@ const app = buildApp({
   logger: true,
 });
 
-await app.listen({ port, host: '127.0.0.1' });
+await app.listen({ port, host });
 if (orphans > 0) app.log.warn(`${orphans} giri interrotti marcati come falliti`);
 scheduler.start({ catchup: orphans > 0 });
 app.log.info(`CTZero Tracker su http://localhost:${port}`);

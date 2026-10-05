@@ -1,0 +1,14 @@
+services:
+  ctzero-tracker:
+    build: .
+    image: ctzero-tracker
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      HOST: 0.0.0.0
+      PORT: 3000
+      TZ: Europe/Rome
+    ports:
+      - "127.0.0.1:3000:3000"
+    volumes:
+      - ./data:/app/data
