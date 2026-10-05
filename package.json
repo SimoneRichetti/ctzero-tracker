@@ -1,6 +1,7 @@
 {
   "name": "ctzero-tracker",
   "private": true,
+  "license": "MIT",
   "type": "module",
   "workspaces": ["shared", "server", "web"],
   "scripts": {

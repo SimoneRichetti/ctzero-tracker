@@ -37,3 +37,6 @@ Everything lives in `data/ctzero.db` (SQLite). To start from scratch, just delet
 ## Known limitations
 - CardTrader only returns the 25 cheapest listings per printing: if they are all non-Zero or in worse condition than the minimum, the card shows "No offers" even if valid, more expensive offers exist.
 - Shipping costs are not taken into account.
+
+## License
+MIT — see [LICENSE](LICENSE).
