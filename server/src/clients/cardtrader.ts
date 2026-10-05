@@ -19,7 +19,7 @@ export interface CtBlueprint {
 
 export interface CardTraderOptions {
   baseUrl?: string;
-  /** Distanza minima tra richieste; default 200 ms (5 req/s, sotto il limite di 10 del marketplace). */
+  /** Minimum spacing between requests; default 200 ms (5 req/s, below the marketplace limit of 10). */
   throttleMs?: number;
   retryDelayMs?: number;
 }
@@ -45,7 +45,7 @@ export class CardTraderClient {
   }
 
   private async get<T>(path: string, params: Params = {}): Promise<T> {
-    if (!this.configured) throw new HttpError(401, 'CARDTRADER_TOKEN non configurato');
+    if (!this.configured) throw new HttpError(401, 'CARDTRADER_TOKEN not configured');
     const url = new URL(this.baseUrl + path);
     for (const [key, value] of Object.entries(params)) {
       if (value !== undefined) url.searchParams.set(key, String(value));
@@ -65,7 +65,7 @@ export class CardTraderClient {
     return this.get<CtBlueprint[]>('/blueprints/export', { expansion_id: expansionId });
   }
 
-  /** Al massimo le 25 inserzioni più economiche del blueprint. */
+  /** At most the 25 cheapest listings for the blueprint. */
   async products(blueprintId: number, q: { foil: boolean; language?: string }): Promise<CtProduct[]> {
     const data = await this.get<Record<string, CtProduct[]>>('/marketplace/products', {
       blueprint_id: blueprintId,

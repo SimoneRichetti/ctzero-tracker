@@ -1,6 +1,6 @@
 export class HttpError extends Error {
   constructor(
-    /** Status HTTP; 0 = errore di rete. */
+    /** HTTP status; 0 = network error. */
     public readonly status: number,
     message: string,
   ) {
@@ -9,7 +9,7 @@ export class HttpError extends Error {
   }
 }
 
-/** Errori che rendono inutile proseguire il giro (token mancante o non valido). */
+/** Errors that make continuing the run pointless (missing or invalid token). */
 export function isFatalHttpError(e: unknown): boolean {
   return e instanceof HttpError && (e.status === 401 || e.status === 403);
 }
@@ -27,7 +27,7 @@ export interface RequestOptions {
 export async function requestJson<T>(url: string, opts: RequestOptions = {}): Promise<T> {
   const retries = opts.retries ?? 2;
   const baseDelay = opts.retryDelayMs ?? 500;
-  // Solo l'host nei messaggi: path e query possono contenere token.
+  // Only the host in messages: path and query may contain tokens.
   const host = new URL(url).host;
   const headers: Record<string, string> = {
     Accept: 'application/json',
@@ -48,7 +48,7 @@ export async function requestJson<T>(url: string, opts: RequestOptions = {}): Pr
         await sleep(baseDelay * 2 ** attempt);
         continue;
       }
-      throw new HttpError(0, `Errore di rete verso ${host}: ${(e as Error).message}`);
+      throw new HttpError(0, `Network error contacting ${host}: ${(e as Error).message}`);
     }
     if (res.ok) return (await res.json()) as T;
     if ((res.status === 429 || res.status >= 500) && attempt < retries) {
@@ -56,11 +56,11 @@ export async function requestJson<T>(url: string, opts: RequestOptions = {}): Pr
       continue;
     }
     const text = await res.text().catch(() => '');
-    throw new HttpError(res.status, `HTTP ${res.status} da ${host}${text ? `: ${text.slice(0, 200)}` : ''}`);
+    throw new HttpError(res.status, `HTTP ${res.status} from ${host}${text ? `: ${text.slice(0, 200)}` : ''}`);
   }
 }
 
-/** Garantisce almeno `minIntervalMs` tra due chiamate consecutive. */
+/** Guarantees at least `minIntervalMs` between two consecutive calls. */
 export function createThrottle(minIntervalMs: number): () => Promise<void> {
   let nextSlot = 0;
   return async () => {

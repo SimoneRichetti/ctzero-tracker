@@ -16,8 +16,8 @@ function slotOn(day: Date, dailyTime: string): Date {
 }
 
 /**
- * Prossima esecuzione prevista. Un risultato ≤ `now` significa che un giro è stato
- * saltato (PC spento) e va eseguito subito.
+ * Next scheduled run. A result ≤ `now` means a run was
+ * missed (PC off) and must run immediately.
  */
 export function nextRunAt(lastFinishedAt: Date | null, s: Settings, now: Date): Date {
   if (s.scheduleMode === 'interval') {

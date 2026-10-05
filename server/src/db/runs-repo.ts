@@ -68,17 +68,17 @@ export function getRunningRun(db: Db): SyncRun | null {
   return one(db, `SELECT * FROM sync_runs WHERE status = 'running' ORDER BY id DESC LIMIT 1`);
 }
 
-/** Ultimo giro terminato, con qualunque esito: base per la pianificazione. */
+/** Last finished run, whatever its outcome: basis for scheduling. */
 export function getLastFinishedRun(db: Db): SyncRun | null {
   return one(db, `SELECT * FROM sync_runs WHERE status != 'running' ORDER BY finished_at DESC, id DESC LIMIT 1`);
 }
 
-/** Chiude i giri rimasti 'running' (processo terminato a metà). */
+/** Closes runs left 'running' (process died mid-run). */
 export function failOrphanRuns(db: Db): number {
   const res = db
     .prepare(
       `UPDATE sync_runs SET status = 'failed', finished_at = started_at,
-         error = 'Interrotto: il processo è stato chiuso durante il giro'
+         error = 'Interrupted: the process was stopped during the run'
        WHERE status = 'running'`,
     )
     .run();

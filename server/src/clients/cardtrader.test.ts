@@ -18,7 +18,7 @@ function lastCall(): { url: URL; init: RequestInit } {
 }
 
 describe('CardTraderClient', () => {
-  it('products: URL, token e inserzioni del blueprint richiesto', async () => {
+  it('products: URL, token and listings of the requested blueprint', async () => {
     fetchMock.mockResolvedValueOnce(json({ '42': [{ id: 1 }], '43': [{ id: 2 }] }));
     const res = await client.products(42, { foil: true, language: 'it' });
     expect(res).toEqual([{ id: 1 }]);
@@ -30,13 +30,13 @@ describe('CardTraderClient', () => {
     expect((init.headers as Record<string, string>).Authorization).toBe('Bearer tok');
   });
 
-  it('products senza lingua non passa il parametro e gestisce la chiave mancante', async () => {
+  it('products without language omits the parameter and handles the missing key', async () => {
     fetchMock.mockResolvedValueOnce(json({}));
     await expect(client.products(42, { foil: false })).resolves.toEqual([]);
     expect(lastCall().url.searchParams.has('language')).toBe(false);
   });
 
-  it('blueprints passa expansion_id', async () => {
+  it('blueprints passes expansion_id', async () => {
     fetchMock.mockResolvedValueOnce(json([{ id: 5, name: 'X', expansion_id: 9, scryfall_id: 's' }]));
     await expect(client.blueprints(9)).resolves.toHaveLength(1);
     const { url } = lastCall();
@@ -50,7 +50,7 @@ describe('CardTraderClient', () => {
     expect(lastCall().url.pathname).toBe('/api/v2/expansions');
   });
 
-  it('senza token lancia 401 senza chiamare la rete', async () => {
+  it('without token throws 401 without hitting the network', async () => {
     const noToken = new CardTraderClient('');
     expect(noToken.configured).toBe(false);
     const err = (await noToken.expansions().catch((e: unknown) => e)) as HttpError;

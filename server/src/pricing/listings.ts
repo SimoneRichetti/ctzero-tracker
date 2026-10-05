@@ -4,11 +4,11 @@ import type { CtProduct } from '../clients/cardtrader-types';
 export interface ListingFilter {
   minCondition: Condition;
   foil: boolean;
-  /** [] = qualsiasi lingua. */
+  /** [] = any language. */
   languages: Language[];
 }
 
-/** Indice nella scala delle condizioni (0 = Mint); -1 se sconosciuta. */
+/** Index in the condition scale (0 = Mint); -1 if unknown. */
 function conditionRank(condition: string | undefined): number {
   return CONDITIONS.indexOf(condition as Condition);
 }
@@ -18,7 +18,7 @@ export function listingUrl(blueprintId: number): string {
 }
 
 export function isValidListing(p: CtProduct, f: ListingFilter): boolean {
-  // Regola assoluta: solo inserzioni acquistabili tramite CardTrader Zero.
+  // Hard rule: only listings purchasable via CardTrader Zero.
   if (p.user?.can_sell_via_hub !== true) return false;
   const rank = conditionRank(p.properties_hash.condition);
   if (rank < 0 || rank > conditionRank(f.minCondition)) return false;

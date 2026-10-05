@@ -11,27 +11,27 @@ const valid = {
 };
 
 describe('cardInputSchema', () => {
-  it('accetta un input valido', () => {
+  it('accepts valid input', () => {
     expect(cardInputSchema.safeParse(valid).success).toBe(true);
   });
 
-  it('rifiuta soglie non positive o non intere', () => {
+  it('rejects non-positive or non-integer thresholds', () => {
     expect(cardInputSchema.safeParse({ ...valid, thresholdCents: 0 }).success).toBe(false);
     expect(cardInputSchema.safeParse({ ...valid, thresholdCents: 1.5 }).success).toBe(false);
   });
 
-  it('rifiuta lingue e condizioni sconosciute', () => {
+  it('rejects unknown languages and conditions', () => {
     expect(cardInputSchema.safeParse({ ...valid, languages: ['xx'] }).success).toBe(false);
     expect(cardInputSchema.safeParse({ ...valid, minCondition: 'Good' }).success).toBe(false);
   });
 
-  it('rifiuta un nome vuoto', () => {
+  it('rejects an empty name', () => {
     expect(cardInputSchema.safeParse({ ...valid, name: '   ' }).success).toBe(false);
   });
 });
 
 describe('cardUpdateSchema', () => {
-  it('non contiene il nome', () => {
+  it('does not include the name', () => {
     const parsed = cardUpdateSchema.parse(valid);
     expect('name' in parsed).toBe(false);
     expect(parsed.thresholdCents).toBe(150);
@@ -39,11 +39,11 @@ describe('cardUpdateSchema', () => {
 });
 
 describe('settingsSchema', () => {
-  it('accetta i default', () => {
+  it('accepts the defaults', () => {
     expect(settingsSchema.safeParse(DEFAULT_SETTINGS).success).toBe(true);
   });
 
-  it('valida orario e intervallo', () => {
+  it('validates time and interval', () => {
     expect(settingsSchema.safeParse({ ...DEFAULT_SETTINGS, dailyTime: '24:00' }).success).toBe(false);
     expect(settingsSchema.safeParse({ ...DEFAULT_SETTINGS, dailyTime: '7:00' }).success).toBe(false);
     expect(settingsSchema.safeParse({ ...DEFAULT_SETTINGS, intervalHours: 0 }).success).toBe(false);

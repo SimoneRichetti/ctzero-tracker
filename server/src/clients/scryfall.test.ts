@@ -13,7 +13,7 @@ const client = new ScryfallClient({ throttleMs: 0, retryDelayMs: 1 });
 const card = (id: string, set: string): ScryfallCard => ({ id, oracle_id: 'abc', name: 'X', set, set_name: set });
 
 describe('ScryfallClient', () => {
-  it('autocomplete con meno di 2 caratteri non chiama la rete', async () => {
+  it('autocomplete with fewer than 2 characters does not hit the network', async () => {
     await expect(client.autocomplete(' l ')).resolves.toEqual([]);
     expect(fetchMock).not.toHaveBeenCalled();
   });
@@ -26,13 +26,13 @@ describe('ScryfallClient', () => {
     expect((init as RequestInit & { headers: Record<string, string> }).headers['User-Agent']).toBe('ctzero-tracker/0.1');
   });
 
-  it('named codifica il nome', async () => {
+  it('named encodes the name', async () => {
     fetchMock.mockResolvedValueOnce(json(card('1', 'mh2')));
     await client.named('Fire // Ice');
     expect(fetchMock.mock.calls[0]![0]).toBe('https://api.scryfall.com/cards/named?exact=Fire%20%2F%2F%20Ice');
   });
 
-  it('prints segue la paginazione', async () => {
+  it('prints follows pagination', async () => {
     fetchMock
       .mockResolvedValueOnce(
         json({ data: [card('a', 'mh2')], has_more: true, next_page: 'https://api.scryfall.com/cards/search?page=2' }),
@@ -46,7 +46,7 @@ describe('ScryfallClient', () => {
     expect(fetchMock.mock.calls[1]![0]).toBe('https://api.scryfall.com/cards/search?page=2');
   });
 
-  it('cardImage usa la prima faccia per le carte doppie', () => {
+  it('cardImage uses the first face for double-faced cards', () => {
     expect(cardImage({ ...card('1', 'x'), image_uris: { small: 'front' } })).toBe('front');
     expect(cardImage({ ...card('1', 'x'), card_faces: [{ image_uris: { small: 'face' } }] })).toBe('face');
     expect(cardImage(card('1', 'x'))).toBeNull();

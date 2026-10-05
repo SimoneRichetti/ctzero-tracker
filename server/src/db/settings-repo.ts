@@ -8,7 +8,7 @@ export function getSettings(db: Db): Settings {
     try {
       raw[r.key] = JSON.parse(r.value);
     } catch {
-      // valore illeggibile: resta il default
+      // unreadable value: keep the default
     }
   }
   const parsed = settingsSchema.safeParse(raw);

@@ -72,7 +72,7 @@ async function run(trigger: SyncTrigger = 'manual') {
 }
 
 describe('SyncService', () => {
-  it('notifica le carte scese sotto soglia', async () => {
+  it('notifies cards that dropped below threshold', async () => {
     const ragavan = addCard('Ragavan', 100, 4000);
     addCard('Bolt', 200, 100);
     prices.set(100, 3800).set(200, 500);
@@ -80,7 +80,7 @@ describe('SyncService', () => {
     expect(result).toMatchObject({ status: 'ok', cardsDone: 2, cardsError: 0, reportSent: true });
     expect(telegram.sendMessage).toHaveBeenCalledTimes(1);
     const text = telegram.sendMessage.mock.calls[0]![0] as string;
-    expect(text).toContain('Sotto soglia');
+    expect(text).toContain('Below threshold');
     expect(text).toContain('Ragavan');
     expect(text).not.toContain('Bolt');
     expect(getCard(db, ragavan.id)).toMatchObject({
@@ -94,14 +94,14 @@ describe('SyncService', () => {
     expect(catalog.lookup).not.toHaveBeenCalled();
   });
 
-  it('nessun evento → nessun messaggio', async () => {
+  it('no events → no message', async () => {
     addCard('Bolt', 200, 100);
     prices.set(200, 500);
     expect(await run()).toMatchObject({ status: 'ok', reportSent: false });
     expect(telegram.sendMessage).not.toHaveBeenCalled();
   });
 
-  it('errore su una carta → partial, il giro continua e il report ha la sezione Errori', async () => {
+  it('error on one card → partial, the run continues and the report has the Errors section', async () => {
     const a = addCard('A', 100, 4000);
     addCard('B', 200, 100);
     prices.set(100, new HttpError(500, 'HTTP 500 da api.cardtrader.com')).set(200, 50);
@@ -114,10 +114,10 @@ describe('SyncService', () => {
     const text = telegram.sendMessage.mock.calls[0]![0] as string;
     expect(text).toContain('❌');
     expect(text).toContain('HTTP 500');
-    expect(text).toContain('Sotto soglia');
+    expect(text).toContain('Below threshold');
   });
 
-  it('errore 401 → giro fallito, un solo avviso, carte successive non toccate', async () => {
+  it('401 error → run failed, a single alert, subsequent cards untouched', async () => {
     addCard('A', 100, 4000);
     const b = addCard('B', 200, 100);
     prices.set(100, new HttpError(401, 'HTTP 401 da api.cardtrader.com'));
@@ -126,12 +126,12 @@ describe('SyncService', () => {
     expect(result.error).toContain('401');
     expect(result.reportSent).toBe(true);
     expect(telegram.sendMessage).toHaveBeenCalledTimes(1);
-    expect(telegram.sendMessage.mock.calls[0]![0]).toContain('Aggiornamento prezzi fallito');
+    expect(telegram.sendMessage.mock.calls[0]![0]).toContain('Price update failed');
     expect(ct.products).toHaveBeenCalledTimes(1);
     expect(getCard(db, b.id)!.lastSyncedAt).toBeNull();
   });
 
-  it('un solo giro alla volta', async () => {
+  it('only one run at a time', async () => {
     addCard('A', 100, 4000);
     let release!: () => void;
     const gate = new Promise<void>((resolve) => (release = resolve));
@@ -148,7 +148,7 @@ describe('SyncService', () => {
     expect(getRun(db, first.run.id)!.status).toBe('ok');
   });
 
-  it('una carta eliminata durante il giro viene saltata', async () => {
+  it('a card deleted during the run is skipped', async () => {
     addCard('A', 100, 4000);
     const b = addCard('B', 200, 100);
     ct.products.mockImplementationOnce(async () => {
@@ -159,7 +159,7 @@ describe('SyncService', () => {
     expect(ct.products).toHaveBeenCalledTimes(1);
   });
 
-  it('una carta eliminata mentre viene prezzata non genera errori', async () => {
+  it('a card deleted while being priced causes no errors', async () => {
     const a = addCard('A', 100, 4000);
     ct.products.mockImplementationOnce(async () => {
       deleteCard(db, a.id);
@@ -169,14 +169,14 @@ describe('SyncService', () => {
     expect(telegram.sendMessage).not.toHaveBeenCalled();
   });
 
-  it('errore Telegram → reportError salvato, il giro resta ok', async () => {
+  it('Telegram error → reportError saved, the run stays ok', async () => {
     addCard('A', 100, 4000);
     prices.set(100, 3000);
-    telegram.sendMessage.mockRejectedValueOnce(new Error('Telegram giù'));
-    expect(await run()).toMatchObject({ status: 'ok', reportSent: false, reportError: 'Telegram giù' });
+    telegram.sendMessage.mockRejectedValueOnce(new Error('Telegram down'));
+    expect(await run()).toMatchObject({ status: 'ok', reportSent: false, reportError: 'Telegram down' });
   });
 
-  it('ri-risolve i blueprint delle carte "qualsiasi" dopo 7 giorni', async () => {
+  it('re-resolves blueprints of "any" cards after 7 days', async () => {
     const card = addCard('Bolt', 100, 4000, { expansionIds: [] });
     updateCard(db, card.id, { blueprintsResolvedAt: new Date(t0.getTime() - 8 * DAY).toISOString() }, t0);
     const lookup = { name: 'Bolt' } as CardLookup;
@@ -191,28 +191,28 @@ describe('SyncService', () => {
     expect(getCard(db, card.id)).toMatchObject({ blueprintsResolvedAt: t0.toISOString(), lastPriceCents: 3000 });
   });
 
-  it('se la ri-risoluzione fallisce usa i blueprint esistenti', async () => {
+  it('if re-resolution fails, uses the existing blueprints', async () => {
     const card = addCard('Bolt', 100, 4000, { expansionIds: [] });
     updateCard(db, card.id, { blueprintsResolvedAt: new Date(t0.getTime() - 8 * DAY).toISOString() }, t0);
-    catalog.lookup.mockRejectedValueOnce(new HttpError(0, 'Errore di rete verso api.scryfall.com'));
+    catalog.lookup.mockRejectedValueOnce(new HttpError(0, 'Network error contacting api.scryfall.com'));
     prices.set(100, 4500);
     expect(await run()).toMatchObject({ status: 'ok' });
     expect(getCard(db, card.id)!.lastPriceCents).toBe(4500);
   });
 
-  it('usa furtherDropPercent dalle impostazioni', async () => {
+  it('uses furtherDropPercent from settings', async () => {
     saveSettings(db, { ...DEFAULT_SETTINGS, furtherDropPercent: 10 });
     const card = addCard('A', 100, 5000);
     updateCard(db, card.id, { alertState: 'below', lastNotifiedPriceCents: 4000 }, t0);
-    prices.set(100, 3700); // -7,5%: sotto il 10%
+    prices.set(100, 3700); // -7.5%: below 10%
     await run();
     expect(telegram.sendMessage).not.toHaveBeenCalled();
     prices.set(100, 3600); // -10%
     await run();
-    expect(telegram.sendMessage.mock.calls[0]![0]).toContain('Ulteriore calo');
+    expect(telegram.sendMessage.mock.calls[0]![0]).toContain('Further drop');
   });
 
-  it('una modifica della soglia durante il prezzaggio non viene sovrascritta', async () => {
+  it('a threshold change during pricing is not overwritten', async () => {
     const card = addCard('A', 100, 3000);
     ct.products.mockImplementationOnce(async () => {
       updateCard(db, card.id, { thresholdCents: 4000, alertState: 'below', lastNotifiedPriceCents: 3500 }, t0);
@@ -223,7 +223,7 @@ describe('SyncService', () => {
     expect(telegram.sendMessage).not.toHaveBeenCalled();
   });
 
-  it('un cambio filtri durante il prezzaggio scarta il prezzo calcolato con i filtri vecchi', async () => {
+  it('a filter change during pricing discards the price computed with the old filters', async () => {
     const card = addCard('A', 100, 4000);
     ct.products.mockImplementationOnce(async () => {
       updateCard(db, card.id, { foil: true, configVersion: 2, alertState: null, lastPriceCents: null }, t0);
@@ -235,7 +235,7 @@ describe('SyncService', () => {
     expect(telegram.sendMessage).not.toHaveBeenCalled();
   });
 
-  it('la ri-risoluzione dei blueprint non sovrascrive un cambio filtri concorrente', async () => {
+  it('blueprint re-resolution does not overwrite a concurrent filter change', async () => {
     const card = addCard('Bolt', 100, 4000, { expansionIds: [] });
     updateCard(db, card.id, { blueprintsResolvedAt: new Date(t0.getTime() - 8 * DAY).toISOString() }, t0);
     const userChoice: CardBlueprint[] = [{ blueprintId: 500, expansionId: 5, expansionName: 'Alpha' }];
@@ -250,7 +250,7 @@ describe('SyncService', () => {
     expect(getCard(db, card.id)).toMatchObject({ expansionIds: [5], configVersion: 2 });
   });
 
-  it('avvisa i listener a fine giro', async () => {
+  it('notifies listeners at the end of the run', async () => {
     const listener = vi.fn();
     service.onFinished(listener);
     await run();

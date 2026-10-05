@@ -25,7 +25,7 @@ async function load() {
   try {
     cards.value = await api.get<TrackedCard[]>('/api/cards');
   } catch (e) {
-    toast.add({ severity: 'error', summary: 'Errore', detail: (e as Error).message, life: 5000 });
+    toast.add({ severity: 'error', summary: 'Error', detail: (e as Error).message, life: 5000 });
   } finally {
     loading.value = false;
   }
@@ -42,22 +42,22 @@ function openEdit(card: TrackedCard) {
 }
 
 function onSaved(card: TrackedCard) {
-  toast.add({ severity: 'success', summary: `${card.name} salvata`, life: 3000 });
+  toast.add({ severity: 'success', summary: `${card.name} saved`, life: 3000 });
   load();
 }
 
 function confirmDelete(card: TrackedCard) {
   confirm.require({
-    message: `Smettere di tracciare "${card.name}"?`,
-    header: 'Conferma',
+    message: `Stop tracking "${card.name}"?`,
+    header: 'Confirm',
     icon: 'pi pi-exclamation-triangle',
-    acceptProps: { label: 'Elimina', severity: 'danger' },
-    rejectProps: { label: 'Annulla', severity: 'secondary', outlined: true },
+    acceptProps: { label: 'Delete', severity: 'danger' },
+    rejectProps: { label: 'Cancel', severity: 'secondary', outlined: true },
     accept: async () => {
       try {
         await api.del(`/api/cards/${card.id}`);
       } catch (e) {
-        toast.add({ severity: 'error', summary: 'Errore', detail: (e as Error).message, life: 5000 });
+        toast.add({ severity: 'error', summary: 'Error', detail: (e as Error).message, life: 5000 });
       }
       await load();
     },
@@ -66,17 +66,17 @@ function confirmDelete(card: TrackedCard) {
 
 function filterChips(card: TrackedCard): string[] {
   return [
-    card.expansionNames.length > 0 ? card.expansionNames.join(', ') : 'Qualsiasi espansione',
-    card.languages.length > 0 ? card.languages.map((l) => LANGUAGE_LABELS[l]).join(', ') : 'Qualsiasi lingua',
+    card.expansionNames.length > 0 ? card.expansionNames.join(', ') : 'Any expansion',
+    card.languages.length > 0 ? card.languages.map((l) => LANGUAGE_LABELS[l]).join(', ') : 'Any language',
     `≥ ${CONDITION_ABBR[card.minCondition]}`,
-    card.foil ? 'Foil' : 'Non foil',
+    card.foil ? 'Foil' : 'Non-foil',
   ];
 }
 
 function formatDelta(card: TrackedCard): string {
   const d = deltaPercent(card);
   if (d === null) return '—';
-  return `${d > 0 ? '+' : ''}${d.toLocaleString('it-IT')}%`;
+  return `${d > 0 ? '+' : ''}${d.toLocaleString('en-US')}%`;
 }
 
 onMounted(load);
@@ -84,20 +84,20 @@ onMounted(load);
 
 <template>
   <div class="page-header">
-    <h1>Carte tracciate</h1>
-    <Button label="Aggiungi carta" icon="pi pi-plus" @click="openNew" />
+    <h1>Tracked cards</h1>
+    <Button label="Add card" icon="pi pi-plus" @click="openNew" />
   </div>
 
   <SyncHeader @finished="load" />
 
   <DataTable :value="rows" :loading="loading" data-key="id" striped-rows>
-    <template #empty>Nessuna carta tracciata. Aggiungine una con "Aggiungi carta".</template>
+    <template #empty>No tracked cards. Add one with "Add card".</template>
     <Column header="" style="width: 64px">
       <template #body="{ data }">
         <img v-if="data.imageUrl" :src="data.imageUrl" :alt="data.name" class="row-thumb" />
       </template>
     </Column>
-    <Column field="name" header="Carta">
+    <Column field="name" header="Card">
       <template #body="{ data }">
         <strong>{{ data.name }}</strong>
         <div class="chips">
@@ -105,7 +105,7 @@ onMounted(load);
         </div>
       </template>
     </Column>
-    <Column header="Prezzo CT Zero">
+    <Column header="CT Zero price">
       <template #body="{ data }">
         <template v-if="data.lastPriceCents !== null">
           <strong>{{ formatEuro(data.lastPriceCents) }}</strong>
@@ -117,15 +117,15 @@ onMounted(load);
         <span v-else>—</span>
       </template>
     </Column>
-    <Column header="Soglia">
+    <Column header="Threshold">
       <template #body="{ data }">{{ formatEuro(data.thresholdCents) }}</template>
     </Column>
-    <Column header="Δ soglia">
+    <Column header="Δ threshold">
       <template #body="{ data }">
         <span :class="(deltaPercent(data) ?? 0) <= 0 ? 'price-down' : 'price-up'">{{ formatDelta(data) }}</span>
       </template>
     </Column>
-    <Column header="Stato">
+    <Column header="Status">
       <template #body="{ data }">
         <Tag
           v-tooltip.top="data.lastError ?? undefined"
@@ -134,18 +134,18 @@ onMounted(load);
         />
       </template>
     </Column>
-    <Column header="Aggiornata">
+    <Column header="Updated">
       <template #body="{ data }">{{ formatDateTime(data.lastSyncedAt) }}</template>
     </Column>
     <Column header="" style="width: 9rem">
       <template #body="{ data }">
         <div class="row-actions">
           <a v-if="data.lastListing" :href="data.lastListing.url" target="_blank" rel="noopener">
-            <Button v-tooltip.top="'Apri su CardTrader'" icon="pi pi-external-link" text rounded />
+            <Button v-tooltip.top="'Open on CardTrader'" icon="pi pi-external-link" text rounded />
           </a>
-          <Button v-tooltip.top="'Modifica'" icon="pi pi-pencil" text rounded @click="openEdit(data)" />
+          <Button v-tooltip.top="'Edit'" icon="pi pi-pencil" text rounded @click="openEdit(data)" />
           <Button
-            v-tooltip.top="'Elimina'"
+            v-tooltip.top="'Delete'"
             icon="pi pi-trash"
             text
             rounded

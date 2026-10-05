@@ -6,16 +6,16 @@ const filter: ListingFilter = { minCondition: 'Near Mint', foil: false, language
 const names = new Map([[10, 'Modern Horizons 2']]);
 
 describe('isValidListing', () => {
-  it("accetta un'inserzione CT Zero valida", () => {
+  it('accepts a valid CT Zero listing', () => {
     expect(isValidListing(makeProduct(), filter)).toBe(true);
   });
 
-  it('scarta le inserzioni non CT Zero', () => {
+  it('rejects non-CT Zero listings', () => {
     expect(isValidListing(makeProduct({ hub: false }), filter)).toBe(false);
     expect(isValidListing(makeProduct({ user: undefined }), filter)).toBe(false);
   });
 
-  it('rispetta la condizione minima', () => {
+  it('respects the minimum condition', () => {
     expect(isValidListing(makeProduct({ props: { condition: 'Mint' } }), filter)).toBe(true);
     expect(isValidListing(makeProduct({ props: { condition: 'Slightly Played' } }), filter)).toBe(false);
     expect(isValidListing(makeProduct({ props: { condition: 'Ottima' } }), filter)).toBe(false);
@@ -24,20 +24,20 @@ describe('isValidListing', () => {
     ).toBe(true);
   });
 
-  it('rispetta foil', () => {
+  it('respects foil', () => {
     expect(isValidListing(makeProduct({ props: { mtg_foil: true } }), filter)).toBe(false);
     expect(isValidListing(makeProduct({ props: { mtg_foil: true } }), { ...filter, foil: true })).toBe(true);
     expect(isValidListing(makeProduct({ props: { mtg_foil: undefined } }), filter)).toBe(true);
   });
 
-  it('filtra per lingua solo se specificata', () => {
+  it('filters by language only when specified', () => {
     const it_ = { ...filter, languages: ['it' as const] };
     expect(isValidListing(makeProduct({ props: { mtg_language: 'en' } }), it_)).toBe(false);
     expect(isValidListing(makeProduct({ props: { mtg_language: 'it' } }), it_)).toBe(true);
     expect(isValidListing(makeProduct({ props: { mtg_language: 'jp' } }), filter)).toBe(true);
   });
 
-  it('scarta quantità zero, vacanza, alterate, firmate, gradate e valute non EUR', () => {
+  it('rejects zero quantity, on vacation, altered, signed, graded and non-EUR currencies', () => {
     expect(isValidListing(makeProduct({ quantity: 0 }), filter)).toBe(false);
     expect(isValidListing(makeProduct({ on_vacation: true }), filter)).toBe(false);
     expect(isValidListing(makeProduct({ props: { altered: true } }), filter)).toBe(false);
@@ -48,7 +48,7 @@ describe('isValidListing', () => {
 });
 
 describe('cheapestListing', () => {
-  it('sceglie la più economica tra le valide', () => {
+  it('picks the cheapest among the valid ones', () => {
     const products = [
       makeProduct({ id: 1, price: { cents: 900, currency: 'EUR' }, hub: false }),
       makeProduct({ id: 2, price: { cents: 1200, currency: 'EUR' } }),
@@ -66,7 +66,7 @@ describe('cheapestListing', () => {
     });
   });
 
-  it('restituisce null se nessuna inserzione è valida', () => {
+  it('returns null when no listing is valid', () => {
     expect(cheapestListing([makeProduct({ hub: false })], filter, names)).toBeNull();
     expect(cheapestListing([], filter, names)).toBeNull();
   });

@@ -33,7 +33,7 @@ function finishedRunAt(d: Date): SyncRun {
 }
 
 describe('Scheduler', () => {
-  it('al primo avvio fa un recupero dopo 30 secondi', () => {
+  it('on first start runs a catch-up after 30 seconds', () => {
     const s = make();
     s.start();
     expect(s.getNextRunAt()).toEqual(new Date(Date.now() + 30_000));
@@ -43,7 +43,7 @@ describe('Scheduler', () => {
     expect(sync.start).toHaveBeenCalledWith('catchup');
   });
 
-  it('con un giro recente pianifica il prossimo intervallo', () => {
+  it('with a recent run schedules the next interval', () => {
     finishedRunAt(new Date(Date.now() - HOUR));
     const s = make();
     s.start();
@@ -52,7 +52,7 @@ describe('Scheduler', () => {
     expect(sync.start).toHaveBeenCalledWith('scheduled');
   });
 
-  it('a fine giro ripianifica dal giro appena concluso', () => {
+  it('at the end of a run reschedules from the run just finished', () => {
     const s = make();
     s.start();
     vi.advanceTimersByTime(30_000);
@@ -61,7 +61,7 @@ describe('Scheduler', () => {
     expect(s.getNextRunAt()).toEqual(new Date(Date.now() + 6 * HOUR));
   });
 
-  it('reschedule applica le nuove impostazioni', () => {
+  it('reschedule applies the new settings', () => {
     finishedRunAt(new Date(Date.now() - HOUR));
     const s = make();
     s.start();
@@ -70,7 +70,7 @@ describe('Scheduler', () => {
     expect(s.getNextRunAt()).toEqual(new Date(2026, 9, 2, 13, 0));
   });
 
-  it('stop annulla il timer', () => {
+  it('stop cancels the timer', () => {
     const s = make();
     s.start();
     s.stop();
@@ -79,7 +79,7 @@ describe('Scheduler', () => {
     expect(s.getNextRunAt()).toBeNull();
   });
 
-  it('un giro orfano non impedisce il recupero all’avvio', () => {
+  it('an orphaned run does not prevent the catch-up at startup', () => {
     startRun(db, 'scheduled', 3, new Date(Date.now() - 7 * HOUR));
     failOrphanRuns(db);
     const s = make();
@@ -87,7 +87,7 @@ describe('Scheduler', () => {
     expect(s.getNextRunAt()).toEqual(new Date(Date.now() + 30_000));
   });
 
-  it('dopo un giro interrotto da poco, l’avvio con catchup forza il recupero', () => {
+  it('after a recently interrupted run, starting with catchup forces the catch-up', () => {
     startRun(db, 'scheduled', 3, new Date(Date.now() - 2 * 60 * 1000));
     expect(failOrphanRuns(db)).toBe(1);
     const s = make();
@@ -97,7 +97,7 @@ describe('Scheduler', () => {
     expect(sync.start).toHaveBeenCalledWith('catchup');
   });
 
-  it('un giro fallito adesso non provoca giri a ripetizione', () => {
+  it('a run that just failed does not cause repeated runs', () => {
     const r = startRun(db, 'scheduled', 0, new Date());
     finishRun(db, r.id, { status: 'failed', error: 'HTTP 401' }, new Date());
     const s = make();

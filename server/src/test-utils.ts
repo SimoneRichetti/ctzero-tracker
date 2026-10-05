@@ -5,7 +5,7 @@ type ProductOverrides = Partial<CtProduct> & {
   hub?: boolean;
 };
 
-/** Inserzione CT Zero valida (NM, EN, non foil, 10 €), personalizzabile. */
+/** Valid CT Zero listing (NM, EN, non-foil, €10), customizable. */
 export function makeProduct(overrides: ProductOverrides = {}): CtProduct {
   const { props, hub, ...rest } = overrides;
   return {

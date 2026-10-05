@@ -11,7 +11,7 @@ export interface SchedulerDeps {
   db: Db;
   sync: Pick<SyncService, 'start' | 'onFinished'>;
   now?: () => Date;
-  /** Attesa prima del giro di recupero all'avvio. */
+  /** Delay before the catch-up run at startup. */
   catchupDelayMs?: number;
 }
 
@@ -21,13 +21,13 @@ export class Scheduler {
   private running = false;
 
   constructor(private readonly deps: SchedulerDeps) {
-    // Ogni giro concluso (anche manuale) sposta la prossima esecuzione.
+    // Every finished run (manual ones too) moves the next execution.
     deps.sync.onFinished(() => {
       if (this.running) this.plan(false);
     });
   }
 
-  /** `catchup`: forza il giro di recupero (es. l'ultimo giro è stato interrotto). */
+  /** `catchup`: forces the catch-up run (e.g. the last run was interrupted). */
   start(options: { catchup?: boolean } = {}): void {
     this.running = true;
     this.plan(true, options.catchup ?? false);
@@ -74,7 +74,7 @@ export class Scheduler {
   private fire(trigger: SyncTrigger): void {
     this.timer = null;
     this.nextAt = null;
-    // Se un giro è già in corso, la ripianificazione avverrà alla sua fine (onFinished).
+    // If a run is already in progress, rescheduling happens when it ends (onFinished).
     this.deps.sync.start(trigger);
   }
 }

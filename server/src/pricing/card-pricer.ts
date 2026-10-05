@@ -10,7 +10,7 @@ export async function priceCard(
   blueprints: CardBlueprint[],
   filter: ListingFilter,
 ): Promise<PriceResult> {
-  // Una chiamata per lingua: il marketplace restituisce solo le 25 inserzioni più economiche.
+  // One call per language: the marketplace returns only the 25 cheapest listings.
   const languages: (string | undefined)[] = filter.languages.length > 0 ? filter.languages : [undefined];
   const products: CtProduct[] = [];
   for (const bp of blueprints) {

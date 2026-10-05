@@ -6,6 +6,6 @@ export const router = createRouter({
   history: createWebHistory(),
   routes: [
     { path: '/', component: CardsPage },
-    { path: '/impostazioni', component: SettingsPage },
+    { path: '/settings', component: SettingsPage },
   ],
 });

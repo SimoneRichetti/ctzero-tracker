@@ -2,7 +2,7 @@ import type { Listing } from '@ctzero/shared';
 import { describe, expect, it } from 'vitest';
 import { buildFatalMessage, buildReport } from './report';
 
-const at = new Date(2026, 9, 2, 18, 0); // ora locale: 02/10 18:00
+const at = new Date(2026, 9, 2, 18, 0); // local time: 10/02 06:00 PM
 const listing: Listing = {
   productId: 1,
   blueprintId: 123,
@@ -15,11 +15,11 @@ const listing: Listing = {
 };
 
 describe('buildReport', () => {
-  it('restituisce null se non ci sono eventi né errori', () => {
+  it('returns null when there are no events or errors', () => {
     expect(buildReport([], [], at)).toBeNull();
   });
 
-  it('compone tutte le sezioni nell’ordine previsto', () => {
+  it('builds all sections in the expected order', () => {
     const text = buildReport(
       [
         { cardName: 'Ragavan, Nimble Pilferer', listing, event: { kind: 'below', priceCents: 3850, thresholdCents: 4000 } },
@@ -45,46 +45,46 @@ describe('buildReport', () => {
     );
     expect(text).toBe(
       [
-        '🃏 <b>CTZero Tracker</b> — 02/10 18:00',
+        '🃏 <b>CTZero Tracker</b> — 10/02 06:00 PM',
         '',
-        '🟢 <b>Sotto soglia</b>',
-        '• Ragavan, Nimble Pilferer (Modern Horizons 2, NM, EN) — 38,50 € (soglia 40,00 €, 1,50 € sotto) → <a href="https://www.cardtrader.com/cards/123">link</a>',
+        '🟢 <b>Below threshold</b>',
+        '• Ragavan, Nimble Pilferer (Modern Horizons 2, NM, EN) — €38.50 (threshold €40.00, €1.50 below) → <a href="https://www.cardtrader.com/cards/123">link</a>',
         '',
-        '📉 <b>Ulteriore calo</b>',
-        '• Sheoldred, the Apocalypse (Dominaria United, SP, IT, foil) — 52,00 € (era 58,00 €) → <a href="https://www.cardtrader.com/cards/7">link</a>',
+        '📉 <b>Further drop</b>',
+        '• Sheoldred, the Apocalypse (Dominaria United, SP, IT, foil) — €52.00 (was €58.00) → <a href="https://www.cardtrader.com/cards/7">link</a>',
         '',
-        '🔁 <b>Tornato sopra soglia</b>',
-        '• The One Ring — 71,00 € (soglia 65,00 €)',
-        '• Black Lotus — nessuna offerta CT Zero valida (soglia 1,00 €)',
+        '🔁 <b>Back above threshold</b>',
+        '• The One Ring — €71.00 (threshold €65.00)',
+        '• Black Lotus — no valid CT Zero offers (threshold €1.00)',
         '',
-        '❌ <b>Errori</b>',
+        '❌ <b>Errors</b>',
         '• Mox Pearl — HTTP 500 da api.cardtrader.com',
       ].join('\n'),
     );
   });
 
-  it('omette le sezioni vuote', () => {
+  it('omits empty sections', () => {
     expect(buildReport([], [{ cardName: 'X', message: 'boom' }], at)).toBe(
-      ['🃏 <b>CTZero Tracker</b> — 02/10 18:00', '', '❌ <b>Errori</b>', '• X — boom'].join('\n'),
+      ['🃏 <b>CTZero Tracker</b> — 10/02 06:00 PM', '', '❌ <b>Errors</b>', '• X — boom'].join('\n'),
     );
   });
 
-  it("fa l'escape dell'HTML nei testi dinamici", () => {
+  it('escapes HTML in dynamic text', () => {
     const text = buildReport(
       [{ cardName: 'Fire & Ice <promo>', listing, event: { kind: 'below', priceCents: 3850, thresholdCents: 4000 } }],
-      [{ cardName: 'A', message: 'errore <html>' }],
+      [{ cardName: 'A', message: 'error <html>' }],
       at,
     )!;
     expect(text).toContain('Fire &amp; Ice &lt;promo&gt;');
-    expect(text).toContain('errore &lt;html&gt;');
+    expect(text).toContain('error &lt;html&gt;');
     expect(text).not.toContain('<promo>');
   });
 });
 
 describe('buildFatalMessage', () => {
-  it('produce un avviso unico con escape', () => {
+  it('produces a single escaped alert', () => {
     expect(buildFatalMessage('HTTP 401 <x>', at)).toBe(
-      '⚠️ <b>CTZero Tracker</b> — 02/10 18:00\nAggiornamento prezzi fallito: HTTP 401 &lt;x&gt;',
+      '⚠️ <b>CTZero Tracker</b> — 10/02 06:00 PM\nPrice update failed: HTTP 401 &lt;x&gt;',
     );
   });
 });

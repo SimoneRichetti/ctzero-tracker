@@ -30,7 +30,7 @@ function card(overrides: Partial<TrackedCard>): TrackedCard {
 }
 
 describe('cardStatus', () => {
-  it('copre tutti i casi', () => {
+  it('covers all cases', () => {
     expect(cardStatus(card({}))).toBe('pending');
     expect(cardStatus(card({ lastSyncStatus: 'error', alertState: 'below' }))).toBe('error');
     expect(cardStatus(card({ lastSyncStatus: 'ok', alertState: 'below' }))).toBe('below');
@@ -40,7 +40,7 @@ describe('cardStatus', () => {
 });
 
 describe('deltaPercent', () => {
-  it('differenza percentuale rispetto alla soglia, un decimale', () => {
+  it('percentage difference from the threshold, one decimal', () => {
     expect(deltaPercent(card({ lastPriceCents: 1100 }))).toBe(10);
     expect(deltaPercent(card({ lastPriceCents: 875 }))).toBe(-12.5);
     expect(deltaPercent(card({ lastPriceCents: null }))).toBeNull();
@@ -48,7 +48,7 @@ describe('deltaPercent', () => {
 });
 
 describe('sortForDisplay', () => {
-  it('sotto soglia in cima, poi per nome', () => {
+  it('below threshold first, then by name', () => {
     const sorted = sortForDisplay([
       card({ id: 1, name: 'Zeta', lastSyncStatus: 'ok', alertState: 'above' }),
       card({ id: 2, name: 'Beta', lastSyncStatus: 'ok', alertState: 'below' }),
@@ -60,8 +60,8 @@ describe('sortForDisplay', () => {
 });
 
 describe('formatDateTime', () => {
-  it('trattino se assente', () => {
+  it('dash when missing', () => {
     expect(formatDateTime(null)).toBe('—');
-    expect(formatDateTime('2026-10-02T16:05:00.000Z')).toMatch(/02\/10\/2026/);
+    expect(formatDateTime('2026-10-02T16:05:00.000Z')).toMatch(/10\/02\/2026/);
   });
 });

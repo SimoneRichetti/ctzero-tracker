@@ -50,12 +50,12 @@ watch(visible, (open) => {
   if (open) void reset();
 });
 
-// Un'anteprima calcolata con filtri diversi non è più valida.
+// A preview computed with different filters is no longer valid.
 watch([expansionIds, languages, minCondition, foil], () => {
   preview.value = null;
 });
 
-// Se il nome viene modificato dopo la selezione, la carta caricata non vale più.
+// If the name is changed after selection, the loaded card is no longer valid.
 watch(name, (value) => {
   if (lookup.value && value !== lookup.value.name) {
     lookup.value = null;
@@ -150,11 +150,11 @@ async function save() {
   <Dialog
     v-model:visible="visible"
     modal
-    :header="isEdit ? 'Modifica carta' : 'Aggiungi carta'"
+    :header="isEdit ? 'Edit card' : 'Add card'"
     :style="{ width: '46rem' }"
   >
     <div class="field">
-      <label for="card-name">Carta</label>
+      <label for="card-name">Card</label>
       <AutoComplete
         v-model="name"
         input-id="card-name"
@@ -162,47 +162,47 @@ async function save() {
         :disabled="isEdit"
         :delay="300"
         :min-length="2"
-        placeholder="Es. Lightning Bolt"
+        placeholder="E.g. Lightning Bolt"
         fluid
         @complete="complete"
         @option-select="onSelect"
       />
     </div>
 
-    <p v-if="loadingLookup" class="muted">Caricamento delle stampe…</p>
+    <p v-if="loadingLookup" class="muted">Loading printings…</p>
 
     <div v-if="lookup" class="lookup">
       <img v-if="lookup.imageUrl" :src="lookup.imageUrl" :alt="lookup.name" class="card-thumb" />
       <div class="filters">
         <div class="field">
-          <label for="expansions">Espansioni</label>
+          <label for="expansions">Expansions</label>
           <MultiSelect
             v-model="expansionIds"
             input-id="expansions"
             :options="expansionOptions"
             option-label="expansionName"
             option-value="expansionId"
-            placeholder="Qualsiasi espansione"
+            placeholder="Any expansion"
             display="chip"
             filter
             fluid
           />
         </div>
         <div class="field">
-          <label for="languages">Lingue</label>
+          <label for="languages">Languages</label>
           <MultiSelect
             v-model="languages"
             input-id="languages"
             :options="languageOptions"
             option-label="label"
             option-value="code"
-            placeholder="Qualsiasi lingua"
+            placeholder="Any language"
             display="chip"
             fluid
           />
         </div>
         <div class="field">
-          <label for="condition">Condizione minima</label>
+          <label for="condition">Minimum condition</label>
           <Select v-model="minCondition" input-id="condition" :options="conditionOptions" fluid />
         </div>
         <div class="field inline">
@@ -214,7 +214,7 @@ async function save() {
 
     <div v-if="lookup" class="pricing">
       <Button
-        label="Calcola prezzo"
+        label="Calculate price"
         icon="pi pi-calculator"
         severity="secondary"
         :loading="loadingPreview"
@@ -222,12 +222,12 @@ async function save() {
       />
       <div v-if="preview" class="preview">
         <p v-if="preview.listing">
-          Prezzo attuale CT Zero: <strong>{{ formatEuro(preview.listing.priceCents) }}</strong> —
+          Current CT Zero price: <strong>{{ formatEuro(preview.listing.priceCents) }}</strong> —
           {{ preview.listing.expansionName }}, {{ preview.listing.condition }},
           {{ preview.listing.language.toUpperCase() }}
-          <a :href="preview.listing.url" target="_blank" rel="noopener">apri</a>
+          <a :href="preview.listing.url" target="_blank" rel="noopener">open</a>
         </p>
-        <p v-else>Nessuna offerta CT Zero valida al momento ({{ preview.blueprintCount }} stampe controllate).</p>
+        <p v-else>No valid CT Zero offers right now ({{ preview.blueprintCount }} printings checked).</p>
         <div class="presets">
           <Button
             v-for="preset in preview.presets"
@@ -240,13 +240,13 @@ async function save() {
         </div>
       </div>
       <div class="field">
-        <label for="threshold">Soglia di notifica</label>
+        <label for="threshold">Notification threshold</label>
         <InputNumber
           v-model="thresholdEuro"
           input-id="threshold"
           mode="currency"
           currency="EUR"
-          locale="it-IT"
+          locale="en-US"
           :min="0.01"
         />
       </div>
@@ -255,8 +255,8 @@ async function save() {
     <Message v-if="error" severity="error">{{ error }}</Message>
 
     <template #footer>
-      <Button label="Annulla" severity="secondary" text @click="visible = false" />
-      <Button label="Salva" icon="pi pi-check" :disabled="!canSave" :loading="saving" @click="save" />
+      <Button label="Cancel" severity="secondary" text @click="visible = false" />
+      <Button label="Save" icon="pi pi-check" :disabled="!canSave" :loading="saving" @click="save" />
     </template>
   </Dialog>
 </template>

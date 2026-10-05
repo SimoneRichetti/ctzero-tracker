@@ -1,39 +1,39 @@
 # CTZero Tracker
 
-Traccia il prezzo minimo **CardTrader Zero** di carte Magic e ti avvisa su Telegram quando scende sotto la soglia scelta.
+Tracks the minimum **CardTrader Zero** price of Magic cards and notifies you on Telegram when it drops below your chosen threshold.
 
-## Requisiti
-- Node.js 24 o superiore
+## Requirements
+- Node.js 24 or later
 
-## Configurazione
+## Configuration
 1. `cp .env.example .env`
-2. **CardTrader**: genera il token API da https://www.cardtrader.com/it/full_api_app e mettilo in `CARDTRADER_TOKEN`.
+2. **CardTrader**: generate an API token at https://www.cardtrader.com/it/full_api_app and put it in `CARDTRADER_TOKEN`.
 3. **Telegram**:
-   - su Telegram scrivi a `@BotFather`, comando `/newbot`, e copia il token in `TELEGRAM_BOT_TOKEN`;
-   - manda un messaggio qualsiasi al tuo bot;
-   - apri `https://api.telegram.org/bot<TOKEN>/getUpdates` e copia `message.chat.id` in `TELEGRAM_CHAT_ID`.
+   - on Telegram, message `@BotFather` with the `/newbot` command and copy the token into `TELEGRAM_BOT_TOKEN`;
+   - send any message to your bot;
+   - open `https://api.telegram.org/bot<TOKEN>/getUpdates` and copy `message.chat.id` into `TELEGRAM_CHAT_ID`.
 4. `npm install`
 
-## Uso
-- `npm start` → compila la UI e avvia tutto su http://localhost:3000
-- Lo scheduler gira solo mentre il processo è acceso. All'avvio, se un aggiornamento è stato saltato, ne parte uno dopo circa 30 secondi.
-- Pianificazione e percentuale di "ulteriore calo" si cambiano dalla pagina **Impostazioni**.
+## Usage
+- `npm start` → builds the UI and starts everything on http://localhost:3000
+- The scheduler only runs while the process is up. On startup, if an update was missed, one starts after about 30 seconds.
+- The schedule and the "further drop" percentage can be changed from the **Settings** page.
 
 ## Docker
-- `docker compose up -d --build` → compila l'immagine e avvia il container su http://localhost:3000
-- Con `restart: unless-stopped` il container riparte da solo a ogni avvio di Docker (quindi di WSL) e in caso di crash; `docker compose down` lo ferma.
-- Dopo una modifica al codice serve di nuovo `docker compose up -d --build`, altrimenti resta in esecuzione la versione vecchia.
-- Il `.env` viene letto dal container e `data/` è montata come volume: il database è lo stesso di `npm start` (non usarli in contemporanea).
-- Log: `docker compose logs -f`.
+- `docker compose up -d --build` → builds the image and starts the container on http://localhost:3000
+- With `restart: unless-stopped` the container restarts automatically whenever Docker (and therefore WSL) starts and after a crash; `docker compose down` stops it.
+- After a code change you need to run `docker compose up -d --build` again, otherwise the old version keeps running.
+- The `.env` file is read by the container and `data/` is mounted as a volume: the database is the same one used by `npm start` (don't run both at the same time).
+- Logs: `docker compose logs -f`.
 
-## Sviluppo
-- `npm run dev:server` (API su :3000, riavvio automatico)
-- `npm run dev:web` (UI su :5173 con proxy verso l'API)
+## Development
+- `npm run dev:server` (API on :3000, auto-restart)
+- `npm run dev:web` (UI on :5173 with a proxy to the API)
 - `npm test`, `npm run typecheck`
 
-## Dati
-Tutto è in `data/ctzero.db` (SQLite). Per ripartire da zero basta cancellare la cartella `data/`.
+## Data
+Everything lives in `data/ctzero.db` (SQLite). To start from scratch, just delete the `data/` folder.
 
-## Limiti noti
-- CardTrader restituisce solo le 25 inserzioni più economiche per stampa: se sono tutte non-Zero o in condizioni peggiori del minimo, la carta risulta "Nessuna offerta" anche se esistono offerte valide più care.
-- Le spese di spedizione non sono considerate.
+## Known limitations
+- CardTrader only returns the 25 cheapest listings per printing: if they are all non-Zero or in worse condition than the minimum, the card shows "No offers" even if valid, more expensive offers exist.
+- Shipping costs are not taken into account.

@@ -89,7 +89,7 @@ export function buildApp(deps: AppDeps): FastifyInstance {
     const result = deps.sync.start('manual');
     return result.started
       ? reply.status(202).send({ run: result.run })
-      : reply.status(409).send({ error: 'Aggiornamento già in corso', run: result.run });
+      : reply.status(409).send({ error: 'Update already in progress', run: result.run });
   });
 
   app.get(
@@ -116,13 +116,13 @@ export function buildApp(deps: AppDeps): FastifyInstance {
   );
 
   app.post('/api/telegram/test', async (_req, reply) => {
-    await deps.telegram.sendMessage('✅ <b>CTZero Tracker</b>: messaggio di test');
+    await deps.telegram.sendMessage('✅ <b>CTZero Tracker</b>: test message');
     return reply.status(204).send();
   });
 
   if (deps.webDistDir && existsSync(join(deps.webDistDir, 'index.html'))) {
     app.register(fastifyStatic, { root: deps.webDistDir });
-    // Fallback SPA: le rotte del router Vue servono index.html.
+    // SPA fallback: Vue router routes serve index.html.
     app.setNotFoundHandler((req, reply) =>
       req.url.startsWith('/api/') ? reply.status(404).send({ error: 'Not found' }) : reply.sendFile('index.html'),
     );

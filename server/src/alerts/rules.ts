@@ -34,7 +34,7 @@ export function evaluateAlert(
         event: { kind: 'below', priceCents: price, thresholdCents },
       };
     }
-    // Il confronto è con l'ultimo prezzo notificato, così i cali piccoli si accumulano.
+    // Compare against the last notified price, so small drops accumulate.
     const reference = prev.lastNotifiedPriceCents ?? price;
     if (price * 100 <= reference * (100 - furtherDropPercent)) {
       return {
@@ -51,7 +51,7 @@ export function evaluateAlert(
   return { next: { ...ABOVE }, event: null };
 }
 
-/** Valutazione senza notifica: usata alla creazione/modifica di una carta. */
+/** Evaluation without notification: used when a card is created/edited. */
 export function evaluateSilently(priceCents: number | null, thresholdCents: number): AlertSnapshot {
   if (priceCents !== null && priceCents <= thresholdCents) {
     return { alertState: 'below', lastNotifiedPriceCents: priceCents };

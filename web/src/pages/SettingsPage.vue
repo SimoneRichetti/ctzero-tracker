@@ -13,15 +13,15 @@ const settings = ref<Settings | null>(null);
 const saving = ref(false);
 const testing = ref(false);
 const modeOptions = [
-  { label: 'Ogni N ore', value: 'interval' },
-  { label: 'Ogni giorno alle', value: 'daily' },
+  { label: 'Every N hours', value: 'interval' },
+  { label: 'Every day at', value: 'daily' },
 ];
 
 onMounted(async () => {
   try {
     settings.value = await api.get<Settings>('/api/settings');
   } catch (e) {
-    toast.add({ severity: 'error', summary: 'Errore', detail: (e as Error).message, life: 5000 });
+    toast.add({ severity: 'error', summary: 'Error', detail: (e as Error).message, life: 5000 });
   }
 });
 
@@ -30,9 +30,9 @@ async function save() {
   saving.value = true;
   try {
     settings.value = await api.put<Settings>('/api/settings', settings.value);
-    toast.add({ severity: 'success', summary: 'Impostazioni salvate', life: 3000 });
+    toast.add({ severity: 'success', summary: 'Settings saved', life: 3000 });
   } catch (e) {
-    toast.add({ severity: 'error', summary: 'Errore', detail: (e as Error).message, life: 5000 });
+    toast.add({ severity: 'error', summary: 'Error', detail: (e as Error).message, life: 5000 });
   } finally {
     saving.value = false;
   }
@@ -42,9 +42,9 @@ async function testTelegram() {
   testing.value = true;
   try {
     await api.post('/api/telegram/test');
-    toast.add({ severity: 'success', summary: 'Messaggio di test inviato', life: 3000 });
+    toast.add({ severity: 'success', summary: 'Test message sent', life: 3000 });
   } catch (e) {
-    toast.add({ severity: 'error', summary: 'Invio fallito', detail: (e as Error).message, life: 5000 });
+    toast.add({ severity: 'error', summary: 'Sending failed', detail: (e as Error).message, life: 5000 });
   } finally {
     testing.value = false;
   }
@@ -52,10 +52,10 @@ async function testTelegram() {
 </script>
 
 <template>
-  <h1>Impostazioni</h1>
+  <h1>Settings</h1>
   <form v-if="settings" class="settings-form" @submit.prevent="save">
     <div class="field">
-      <label>Pianificazione</label>
+      <label>Schedule</label>
       <SelectButton
         v-model="settings.scheduleMode"
         :options="modeOptions"
@@ -65,22 +65,22 @@ async function testTelegram() {
       />
     </div>
     <div v-if="settings.scheduleMode === 'interval'" class="field">
-      <label for="hours">Intervallo (ore)</label>
+      <label for="hours">Interval (hours)</label>
       <InputNumber v-model="settings.intervalHours" input-id="hours" :min="1" :max="168" show-buttons />
     </div>
     <div v-else class="field">
-      <label for="time">Orario</label>
+      <label for="time">Time</label>
       <InputText id="time" v-model="settings.dailyTime" type="time" />
     </div>
     <div class="field">
-      <label for="drop">Notifica "ulteriore calo" a partire da</label>
+      <label for="drop">Notify "further drop" starting from</label>
       <InputNumber v-model="settings.furtherDropPercent" input-id="drop" :min="1" :max="90" suffix=" %" />
     </div>
     <div class="actions">
-      <Button type="submit" label="Salva" icon="pi pi-check" :loading="saving" />
+      <Button type="submit" label="Save" icon="pi pi-check" :loading="saving" />
       <Button
         type="button"
-        label="Invia messaggio di test Telegram"
+        label="Send Telegram test message"
         icon="pi pi-send"
         severity="secondary"
         :loading="testing"

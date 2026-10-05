@@ -58,7 +58,7 @@ const listing: Listing = {
 };
 
 describe('openDb', () => {
-  it('applica le migrazioni una sola volta su file', () => {
+  it('applies migrations only once on a file', () => {
     const path = join(mkdtempSync(join(tmpdir(), 'ctzero-')), 'test.db');
     openDb(path).close();
     const again = openDb(path);
@@ -69,7 +69,7 @@ describe('openDb', () => {
 });
 
 describe('cards-repo', () => {
-  it('insert + get con i default', () => {
+  it('insert + get with defaults', () => {
     const card = insertCard(db, newCard, t0);
     expect(card).toMatchObject({
       name: 'Lightning Bolt',
@@ -87,7 +87,7 @@ describe('cards-repo', () => {
     expect(getCard(db, card.id)).toEqual(card);
   });
 
-  it('updateCard aggiorna solo i campi passati e accetta null', () => {
+  it('updateCard updates only the given fields and accepts null', () => {
     const { id } = insertCard(db, newCard, t0);
     const updated = updateCard(db, id, { lastPriceCents: 120, lastListing: listing, alertState: 'below', foil: true }, t1);
     expect(updated).toMatchObject({ lastPriceCents: 120, lastListing: listing, alertState: 'below', foil: true });
@@ -97,11 +97,11 @@ describe('cards-repo', () => {
     expect(cleared.alertState).toBe('below');
   });
 
-  it('updateCard su id inesistente lancia NotFoundError', () => {
+  it('updateCard on a nonexistent id throws NotFoundError', () => {
     expect(() => updateCard(db, 999, { thresholdCents: 1 })).toThrow(NotFoundError);
   });
 
-  it('replaceBlueprints sostituisce e popola expansionNames', () => {
+  it('replaceBlueprints replaces and populates expansionNames', () => {
     const { id } = insertCard(db, newCard, t0);
     replaceBlueprints(db, id, [
       { blueprintId: 10, expansionId: 1, expansionName: 'Alpha' },
@@ -114,13 +114,13 @@ describe('cards-repo', () => {
     expect(getBlueprints(db, id)).toEqual([{ blueprintId: 12, expansionId: 2, expansionName: 'Beta' }]);
   });
 
-  it('expansionNames è vuoto per le carte con espansione "qualsiasi"', () => {
+  it('expansionNames is empty for cards with "any" expansion', () => {
     const { id } = insertCard(db, { ...newCard, expansionIds: [] }, t0);
     replaceBlueprints(db, id, [{ blueprintId: 10, expansionId: 1, expansionName: 'Alpha' }]);
     expect(getCard(db, id)!.expansionNames).toEqual([]);
   });
 
-  it('deleteCard elimina in cascata blueprint e snapshot', () => {
+  it('deleteCard cascades to blueprints and snapshots', () => {
     const { id } = insertCard(db, newCard, t0);
     replaceBlueprints(db, id, [{ blueprintId: 10, expansionId: 1, expansionName: 'Alpha' }]);
     insertSnapshot(db, { cardId: id, configVersion: 1, syncedAt: t0.toISOString(), priceCents: 100 });
@@ -131,13 +131,13 @@ describe('cards-repo', () => {
     expect(deleteCard(db, id)).toBe(false);
   });
 
-  it('listCards ordina per nome', () => {
+  it('listCards sorts by name', () => {
     insertCard(db, { ...newCard, name: 'Zur' }, t0);
     insertCard(db, { ...newCard, name: 'Abrade' }, t0);
     expect(listCards(db).map((c) => c.name)).toEqual(['Abrade', 'Zur']);
   });
 
-  it('snapshot con prezzo nullo', () => {
+  it('snapshot with null price', () => {
     const { id } = insertCard(db, newCard, t0);
     insertSnapshot(db, { cardId: id, configVersion: 2, syncedAt: t0.toISOString(), priceCents: null });
     expect(listSnapshots(db, id)).toEqual([{ configVersion: 2, syncedAt: t0.toISOString(), priceCents: null }]);
@@ -145,7 +145,7 @@ describe('cards-repo', () => {
 });
 
 describe('runs-repo', () => {
-  it('ciclo di vita di un giro', () => {
+  it('run lifecycle', () => {
     const run = startRun(db, 'manual', 3, t0);
     expect(run).toMatchObject({ trigger: 'manual', status: 'running', cardsTotal: 3, cardsDone: 0, finishedAt: null });
     expect(getRunningRun(db)?.id).toBe(run.id);
@@ -163,16 +163,16 @@ describe('runs-repo', () => {
     expect(getLastFinishedRun(db)?.id).toBe(run.id);
   });
 
-  it('failOrphanRuns chiude i giri interrotti con finished_at = started_at', () => {
+  it('failOrphanRuns closes interrupted runs with finished_at = started_at', () => {
     const run = startRun(db, 'scheduled', 1, t0);
     expect(failOrphanRuns(db)).toBe(1);
     const orphan = getRun(db, run.id)!;
     expect(orphan.status).toBe('failed');
     expect(orphan.finishedAt).toBe(t0.toISOString());
-    expect(orphan.error).toContain('Interrotto');
+    expect(orphan.error).toContain('Interrupted');
   });
 
-  it('getLastFinishedRun prende il più recente, qualunque esito', () => {
+  it('getLastFinishedRun takes the most recent, whatever the outcome', () => {
     const a = startRun(db, 'manual', 0, t0);
     finishRun(db, a.id, { status: 'failed', error: 'x' }, t2);
     const b = startRun(db, 'manual', 0, t0);
@@ -182,7 +182,7 @@ describe('runs-repo', () => {
 });
 
 describe('settings-repo', () => {
-  it('restituisce i default se vuoto', () => {
+  it('returns defaults when empty', () => {
     expect(getSettings(db)).toEqual(DEFAULT_SETTINGS);
   });
 
@@ -192,7 +192,7 @@ describe('settings-repo', () => {
     expect(getSettings(db)).toEqual(s);
   });
 
-  it('valori corrotti → default', () => {
+  it('corrupted values → defaults', () => {
     db.prepare(`INSERT INTO settings (key, value) VALUES ('intervalHours', '"abc"')`).run();
     expect(getSettings(db)).toEqual(DEFAULT_SETTINGS);
   });

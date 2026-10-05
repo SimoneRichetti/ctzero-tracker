@@ -16,7 +16,7 @@ async function request<T>(method: string, path: string, body?: unknown): Promise
   });
   if (res.status === 204) return undefined as T;
   const data = (await res.json().catch(() => null)) as { error?: string } | null;
-  if (!res.ok) throw new ApiError(res.status, data?.error ?? `Errore HTTP ${res.status}`);
+  if (!res.ok) throw new ApiError(res.status, data?.error ?? `HTTP error ${res.status}`);
   return data as T;
 }
 

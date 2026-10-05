@@ -10,9 +10,9 @@ export interface CardLookup {
   name: string;
   oracleId: string;
   imageUrl: string | null;
-  /** Espansioni CardTrader in cui la carta è stata stampata. */
+  /** CardTrader expansions in which the card was printed. */
   printings: Printing[];
-  /** Per ogni espansione CardTrader, gli id Scryfall delle stampe della carta. */
+  /** For each CardTrader expansion, the Scryfall ids of the card's printings. */
   scryfallIdsByExpansion: Map<number, Set<string>>;
 }
 
@@ -37,7 +37,7 @@ export class Catalog {
     try {
       return await this.scryfall.named(name);
     } catch (e) {
-      if (e instanceof HttpError && e.status === 404) throw new NotFoundError(`Carta "${name}" non trovata`);
+      if (e instanceof HttpError && e.status === 404) throw new NotFoundError(`Card "${name}" not found`);
       throw e;
     }
   }
@@ -62,7 +62,7 @@ export class Catalog {
     return { name: card.name, oracleId: card.oracle_id, imageUrl: cardImage(card), printings, scryfallIdsByExpansion: ids };
   }
 
-  /** `expansionIds` vuoto = tutte le espansioni in cui esiste la carta. */
+  /** Empty `expansionIds` = all expansions the card exists in. */
   async resolveBlueprints(lookup: CardLookup, expansionIds: number[]): Promise<CardBlueprint[]> {
     const available = lookup.scryfallIdsByExpansion;
     const targets = expansionIds.length > 0 ? expansionIds.filter((id) => available.has(id)) : [...available.keys()];
@@ -77,7 +77,7 @@ export class Catalog {
       }
     }
     if (out.length === 0) {
-      throw new ValidationError(`Nessuna stampa di "${lookup.name}" trovata su CardTrader per le espansioni selezionate`);
+      throw new ValidationError(`No printings of "${lookup.name}" found on CardTrader for the selected expansions`);
     }
     return out;
   }

@@ -2,7 +2,7 @@ import { requestJson } from './http';
 
 export const TELEGRAM_MAX_LENGTH = 4096;
 
-/** Divide il testo sui confini di riga; spezza solo le righe più lunghe del limite. */
+/** Splits text on line boundaries; only breaks lines longer than the limit. */
 export function splitMessage(text: string, max = TELEGRAM_MAX_LENGTH): string[] {
   if (text.length <= max) return [text];
   const chunks: string[] = [];
@@ -48,7 +48,7 @@ export class TelegramClient {
   }
 
   async sendMessage(html: string): Promise<void> {
-    if (!this.configured) throw new Error('Telegram non configurato (TELEGRAM_BOT_TOKEN / TELEGRAM_CHAT_ID)');
+    if (!this.configured) throw new Error('Telegram not configured (TELEGRAM_BOT_TOKEN / TELEGRAM_CHAT_ID)');
     for (const chunk of splitMessage(html)) {
       await requestJson(`${this.baseUrl}/bot${this.botToken}/sendMessage`, {
         method: 'POST',

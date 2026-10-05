@@ -21,11 +21,11 @@ export interface TrackedCard {
   name: string;
   scryfallOracleId: string;
   imageUrl: string | null;
-  /** Espansioni CardTrader selezionate; [] = qualsiasi. */
+  /** Selected CardTrader expansions; [] = any. */
   expansionIds: number[];
-  /** Nomi delle espansioni selezionate (vuoto se "qualsiasi"). */
+  /** Names of the selected expansions (empty if "any"). */
   expansionNames: string[];
-  /** [] = qualsiasi lingua. */
+  /** [] = any language. */
   languages: Language[];
   minCondition: Condition;
   foil: boolean;

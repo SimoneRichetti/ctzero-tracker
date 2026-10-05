@@ -1,4 +1,4 @@
-/** Inserzione restituita da GET /marketplace/products (solo i campi usati). */
+/** Listing returned by GET /marketplace/products (only the fields we use). */
 export interface CtProduct {
   id: number;
   blueprint_id: number;

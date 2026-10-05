@@ -89,7 +89,7 @@ export class CardService {
   async update(id: number, input: CardUpdate): Promise<TrackedCard> {
     const { db, catalog } = this.deps;
     const card = getCard(db, id);
-    if (!card) throw new NotFoundError('Carta non trovata');
+    if (!card) throw new NotFoundError('Card not found');
     const now = this.now();
 
     if (!filtersChanged(card, input)) {
@@ -101,7 +101,7 @@ export class CardService {
       );
     }
 
-    // Prima si risolvono i blueprint: se fallisce, la carta resta invariata.
+    // Resolve blueprints first: if that fails, the card is left unchanged.
     const lookup = await catalog.lookup(card.name);
     const blueprints = await catalog.resolveBlueprints(lookup, input.expansionIds);
     const updated = transaction(db, () => {
@@ -132,10 +132,10 @@ export class CardService {
   }
 
   delete(id: number): void {
-    if (!deleteCard(this.deps.db, id)) throw new NotFoundError('Carta non trovata');
+    if (!deleteCard(this.deps.db, id)) throw new NotFoundError('Card not found');
   }
 
-  /** Aggiorna il prezzo di una sola carta senza inviare notifiche. */
+  /** Refreshes the price of a single card without sending notifications. */
   private async refreshSilently(card: TrackedCard, blueprints: CardBlueprint[]): Promise<TrackedCard> {
     const { db, ct } = this.deps;
     const now = this.now();

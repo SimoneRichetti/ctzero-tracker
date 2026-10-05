@@ -5,7 +5,7 @@ export class NotFoundError extends Error {
   }
 }
 
-/** Richiesta formalmente valida ma non soddisfacibile (→ 422). */
+/** Well-formed request that cannot be fulfilled (→ 422). */
 export class ValidationError extends Error {
   constructor(message: string) {
     super(message);

@@ -1,4 +1,4 @@
-/** Condizioni MTG su CardTrader, dalla migliore alla peggiore. */
+/** MTG conditions on CardTrader, from best to worst. */
 export const CONDITIONS = [
   'Mint',
   'Near Mint',
@@ -20,20 +20,20 @@ export const CONDITION_ABBR: Record<Condition, string> = {
   Poor: 'PO',
 };
 
-/** Codici lingua usati da CardTrader (`mtg_language` e parametro `language`). */
+/** Language codes used by CardTrader (`mtg_language` and the `language` parameter). */
 export const LANGUAGES = ['en', 'it', 'fr', 'de', 'es', 'pt', 'jp', 'ko', 'ru', 'zh-CN', 'zh-TW'] as const;
 export type Language = (typeof LANGUAGES)[number];
 
 export const LANGUAGE_LABELS: Record<Language, string> = {
-  en: 'Inglese',
-  it: 'Italiano',
-  fr: 'Francese',
-  de: 'Tedesco',
-  es: 'Spagnolo',
-  pt: 'Portoghese',
-  jp: 'Giapponese',
-  ko: 'Coreano',
-  ru: 'Russo',
-  'zh-CN': 'Cinese semplificato',
-  'zh-TW': 'Cinese tradizionale',
+  en: 'English',
+  it: 'Italian',
+  fr: 'French',
+  de: 'German',
+  es: 'Spanish',
+  pt: 'Portuguese',
+  jp: 'Japanese',
+  ko: 'Korean',
+  ru: 'Russian',
+  'zh-CN': 'Simplified Chinese',
+  'zh-TW': 'Traditional Chinese',
 };

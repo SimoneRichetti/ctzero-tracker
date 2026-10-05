@@ -12,18 +12,18 @@ const json = (body: unknown, status = 200) =>
   new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } });
 
 describe('requestJson', () => {
-  it('restituisce il JSON', async () => {
+  it('returns the JSON', async () => {
     fetchMock.mockResolvedValueOnce(json({ a: 1 }));
     await expect(requestJson('https://x.test/a')).resolves.toEqual({ a: 1 });
   });
 
-  it('ritenta su 429 e poi riesce', async () => {
+  it('retries on 429 and then succeeds', async () => {
     fetchMock.mockResolvedValueOnce(json({}, 429)).mockResolvedValueOnce(json({ ok: true }));
     await expect(requestJson('https://x.test/a', { retryDelayMs: 1 })).resolves.toEqual({ ok: true });
     expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 
-  it('dopo i tentativi su 500 lancia HttpError', async () => {
+  it('throws HttpError after retries on 500', async () => {
     fetchMock.mockImplementation(async () => json({ e: 1 }, 500));
     const err = await requestJson('https://x.test/a', { retryDelayMs: 1 }).catch((e: unknown) => e);
     expect(err).toBeInstanceOf(HttpError);
@@ -31,14 +31,14 @@ describe('requestJson', () => {
     expect(fetchMock).toHaveBeenCalledTimes(3);
   });
 
-  it('non ritenta su 404', async () => {
+  it('does not retry on 404', async () => {
     fetchMock.mockImplementation(async () => json({}, 404));
     const err = (await requestJson('https://x.test/a', { retryDelayMs: 1 }).catch((e: unknown) => e)) as HttpError;
     expect(err.status).toBe(404);
     expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 
-  it('su errore di rete ritenta e poi lancia HttpError con status 0', async () => {
+  it('on network error retries and then throws HttpError with status 0', async () => {
     fetchMock.mockRejectedValue(new TypeError('fetch failed'));
     const err = (await requestJson('https://x.test/a', { retryDelayMs: 1 }).catch((e: unknown) => e)) as HttpError;
     expect(err).toBeInstanceOf(HttpError);
@@ -46,7 +46,7 @@ describe('requestJson', () => {
     expect(fetchMock).toHaveBeenCalledTimes(3);
   });
 
-  it('non mette path e query nel messaggio di errore (niente token)', async () => {
+  it('does not put path and query in the error message (no tokens)', async () => {
     fetchMock.mockImplementation(async () => json({}, 401));
     const err = (await requestJson('https://api.telegram.org/botSECRET/sendMessage?x=SECRET').catch(
       (e: unknown) => e,
@@ -55,7 +55,7 @@ describe('requestJson', () => {
     expect(err.message).not.toContain('SECRET');
   });
 
-  it('in POST invia il body JSON', async () => {
+  it('sends the JSON body on POST', async () => {
     fetchMock.mockResolvedValueOnce(json({}));
     await requestJson('https://x.test/a', { method: 'POST', body: { a: 1 } });
     const init = fetchMock.mock.calls[0]![1] as RequestInit;
@@ -66,7 +66,7 @@ describe('requestJson', () => {
 });
 
 describe('isFatalHttpError', () => {
-  it('riconosce 401 e 403', () => {
+  it('recognizes 401 and 403', () => {
     expect(isFatalHttpError(new HttpError(401, 'x'))).toBe(true);
     expect(isFatalHttpError(new HttpError(403, 'x'))).toBe(true);
     expect(isFatalHttpError(new HttpError(500, 'x'))).toBe(false);
@@ -75,7 +75,7 @@ describe('isFatalHttpError', () => {
 });
 
 describe('createThrottle', () => {
-  it('distanzia le chiamate', async () => {
+  it('spaces out calls', async () => {
     const throttle = createThrottle(40);
     const start = Date.now();
     await throttle();

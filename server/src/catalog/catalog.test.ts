@@ -40,7 +40,7 @@ beforeEach(() => {
 });
 
 describe('Catalog.lookup', () => {
-  it('mappa le stampe Scryfall sulle espansioni CardTrader di Magic', async () => {
+  it('maps Scryfall printings to Magic CardTrader expansions', async () => {
     const lookup = await catalog.lookup('ragavan');
     expect(scryfall.named).toHaveBeenCalledWith('ragavan');
     expect(scryfall.prints).toHaveBeenCalledWith('o1');
@@ -53,12 +53,12 @@ describe('Catalog.lookup', () => {
     ]);
   });
 
-  it('carta inesistente su Scryfall → NotFoundError', async () => {
+  it('card not found on Scryfall → NotFoundError', async () => {
     scryfall.named.mockRejectedValueOnce(new HttpError(404, 'HTTP 404 da api.scryfall.com'));
     await expect(catalog.lookup('Xyz')).rejects.toBeInstanceOf(NotFoundError);
   });
 
-  it('mette in cache le espansioni per 24 ore', async () => {
+  it('caches expansions for 24 hours', async () => {
     await catalog.lookup('a');
     await catalog.lookup('b');
     expect(ct.expansions).toHaveBeenCalledTimes(1);
@@ -69,7 +69,7 @@ describe('Catalog.lookup', () => {
 });
 
 describe('Catalog.resolveBlueprints', () => {
-  it('con espansione "qualsiasi" usa tutte le stampe', async () => {
+  it('with "any" expansion uses all printings', async () => {
     const lookup = await catalog.lookup('ragavan');
     await expect(catalog.resolveBlueprints(lookup, [])).resolves.toEqual([
       { blueprintId: 100, expansionId: 1, expansionName: 'Modern Horizons 2' },
@@ -77,7 +77,7 @@ describe('Catalog.resolveBlueprints', () => {
     ]);
   });
 
-  it('con espansioni specifiche scarica solo quelle', async () => {
+  it('with specific expansions fetches only those', async () => {
     const lookup = await catalog.lookup('ragavan');
     await expect(catalog.resolveBlueprints(lookup, [2])).resolves.toEqual([
       { blueprintId: 200, expansionId: 2, expansionName: 'Magic 2010' },
@@ -86,7 +86,7 @@ describe('Catalog.resolveBlueprints', () => {
     expect(ct.blueprints).toHaveBeenCalledWith(2);
   });
 
-  it('senza blueprint abbinati lancia ValidationError', async () => {
+  it('without matched blueprints throws ValidationError', async () => {
     const lookup = await catalog.lookup('ragavan');
     await expect(catalog.resolveBlueprints(lookup, [99])).rejects.toBeInstanceOf(ValidationError);
   });

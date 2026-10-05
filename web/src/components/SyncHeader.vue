@@ -16,9 +16,9 @@ let lastSeenRunId: number | null | undefined;
 
 const RUN_META: Record<SyncRun['status'], { label: string; severity: 'success' | 'warn' | 'danger' | 'info' }> = {
   ok: { label: 'OK', severity: 'success' },
-  partial: { label: 'Con errori', severity: 'warn' },
-  failed: { label: 'Fallito', severity: 'danger' },
-  running: { label: 'In corso', severity: 'info' },
+  partial: { label: 'With errors', severity: 'warn' },
+  failed: { label: 'Failed', severity: 'danger' },
+  running: { label: 'Running', severity: 'info' },
 };
 
 const running = computed(() => status.value?.current ?? null);
@@ -31,11 +31,11 @@ async function refresh() {
   try {
     status.value = await api.get<SyncStatusDto>('/api/sync/status');
     const lastId = status.value.last?.id ?? null;
-    // Un nuovo giro concluso (manuale o pianificato): la pagina ricarica le carte.
+    // A new run has finished (manual or scheduled): the page reloads the cards.
     if (lastSeenRunId !== undefined && lastId !== lastSeenRunId) emit('finished');
     lastSeenRunId = lastId;
   } catch {
-    // si riprova al prossimo giro di polling
+    // retry on the next polling cycle
   }
   clearTimeout(timer);
   timer = setTimeout(refresh, running.value ? 2000 : 30000);
@@ -46,7 +46,7 @@ async function syncNow() {
     await api.post('/api/sync');
   } catch (e) {
     if (!(e instanceof ApiError && e.status === 409)) {
-      toast.add({ severity: 'error', summary: 'Aggiornamento non avviato', detail: (e as Error).message, life: 5000 });
+      toast.add({ severity: 'error', summary: 'Update not started', detail: (e as Error).message, life: 5000 });
     }
   }
   await refresh();
@@ -60,25 +60,25 @@ onUnmounted(() => clearTimeout(timer));
   <div class="sync-header">
     <div class="sync-info">
       <div v-if="status?.last">
-        Ultimo aggiornamento: <strong>{{ formatDateTime(status.last.finishedAt) }}</strong>
+        Last update: <strong>{{ formatDateTime(status.last.finishedAt) }}</strong>
         <Tag
           :value="RUN_META[status.last.status].label"
           :severity="RUN_META[status.last.status].severity"
           class="run-tag"
         />
         <span v-if="status.last.error" class="muted"> — {{ status.last.error }}</span>
-        <span v-if="status.last.reportError" class="muted"> — report non inviato: {{ status.last.reportError }}</span>
+        <span v-if="status.last.reportError" class="muted"> — report not sent: {{ status.last.reportError }}</span>
       </div>
-      <div v-else>Nessun aggiornamento eseguito finora</div>
-      <div class="muted">Prossimo aggiornamento: {{ formatDateTime(status?.nextRunAt ?? null) }}</div>
+      <div v-else>No updates run yet</div>
+      <div class="muted">Next update: {{ formatDateTime(status?.nextRunAt ?? null) }}</div>
     </div>
     <div class="sync-action">
       <div v-if="running" class="progress">
         <ProgressBar :value="progress" :show-value="false" />
-        <small>{{ running.cardsDone }}/{{ running.cardsTotal }} carte</small>
+        <small>{{ running.cardsDone }}/{{ running.cardsTotal }} cards</small>
       </div>
       <Button
-        label="Aggiorna ora"
+        label="Update now"
         icon="pi pi-refresh"
         :loading="running !== null"
         :disabled="running !== null"

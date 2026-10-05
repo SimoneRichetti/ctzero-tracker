@@ -147,7 +147,7 @@ export function updateCard(db: Db, id: number, patch: CardPatch, now: Date = new
   const sets = [...keys.map((k) => `${COLUMNS[k]} = ?`), 'updated_at = ?'];
   const values: SqlValue[] = [...keys.map((k) => encode(k, patch[k])), now.toISOString()];
   const res = db.prepare(`UPDATE tracked_cards SET ${sets.join(', ')} WHERE id = ?`).run(...values, id);
-  if (Number(res.changes) === 0) throw new NotFoundError('Carta non trovata');
+  if (Number(res.changes) === 0) throw new NotFoundError('Card not found');
   return getCard(db, id)!;
 }
 

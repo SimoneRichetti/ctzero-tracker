@@ -22,7 +22,7 @@ export interface SyncServiceDeps {
   now?: () => Date;
 }
 
-/** Vero se la carta non è stata eliminata né modificata nei filtri o nella soglia. */
+/** True if the card has not been deleted nor had its filters or threshold changed. */
 function isUnchanged(latest: TrackedCard | null, seen: TrackedCard): boolean {
   return latest !== null && latest.configVersion === seen.configVersion && latest.thresholdCents === seen.thresholdCents;
 }
@@ -64,7 +64,7 @@ export class SyncService {
     await this.active;
   }
 
-  /** Non rigetta mai: ogni errore finisce nell'esito del giro. */
+  /** Never rejects: every error ends up in the run outcome. */
   private async execute(runId: number, cardIds: number[]): Promise<void> {
     const { db, telegram } = this.deps;
     try {
@@ -74,7 +74,7 @@ export class SyncService {
       let done = 0;
 
       for (const id of cardIds) {
-        const card = getCard(db, id); // null se eliminata durante il giro
+        const card = getCard(db, id); // null if deleted during the run
         if (card) {
           try {
             const item = await this.processCard(card, furtherDropPercent);
@@ -139,8 +139,8 @@ export class SyncService {
       furtherDropPercent,
     );
     const applied = transaction(db, () => {
-      // La carta può essere stata eliminata o modificata mentre la prezzavamo: in quel caso
-      // il risultato è calcolato su dati vecchi e non va scritto (né notificato).
+      // The card may have been deleted or modified while we were pricing it: in that case
+      // the result is based on stale data and must not be written (or notified).
       if (!isUnchanged(getCard(db, card.id), card)) return false;
       insertSnapshot(db, { cardId: card.id, configVersion: card.configVersion, syncedAt: iso, priceCents });
       updateCard(
@@ -154,7 +154,7 @@ export class SyncService {
     return applied && event ? { cardName: card.name, listing, event } : null;
   }
 
-  /** Per le carte "qualsiasi espansione" ricalcola i blueprint ogni 7 giorni (nuove ristampe). */
+  /** For "any expansion" cards, recomputes blueprints every 7 days (new reprints). */
   private async blueprintsFor(card: TrackedCard): Promise<CardBlueprint[]> {
     const { db, catalog } = this.deps;
     const current = getBlueprints(db, card.id);

@@ -47,7 +47,7 @@ beforeEach(() => {
 });
 
 describe('create', () => {
-  it('salva, aggiorna subito e valuta in silenzio (sotto soglia)', async () => {
+  it('saves, refreshes immediately and evaluates silently (below threshold)', async () => {
     const card = await service.create(input);
     expect(catalog.lookup).toHaveBeenCalledWith('ragavan');
     expect(card).toMatchObject({
@@ -66,28 +66,28 @@ describe('create', () => {
     expect(listSnapshots(db, card.id)).toEqual([{ configVersion: 1, syncedAt: t0.toISOString(), priceCents: 3800 }]);
   });
 
-  it('sopra soglia → above', async () => {
+  it('above threshold → above', async () => {
     price = 4500;
     const card = await service.create(input);
     expect(card).toMatchObject({ alertState: 'above', lastNotifiedPriceCents: null });
   });
 
-  it('se il prezzo fallisce la carta resta salvata con errore', async () => {
+  it('if pricing fails the card stays saved with an error', async () => {
     ct.products.mockRejectedValueOnce(new Error('timeout'));
     const card = await service.create(input);
     expect(card).toMatchObject({ lastSyncStatus: 'error', lastError: 'timeout', alertState: null });
     expect(listCards(db)).toHaveLength(1);
   });
 
-  it('senza blueprint non salva nulla', async () => {
-    catalog.resolveBlueprints.mockRejectedValueOnce(new ValidationError('nessuna stampa'));
+  it('without blueprints saves nothing', async () => {
+    catalog.resolveBlueprints.mockRejectedValueOnce(new ValidationError('no printings'));
     await expect(service.create(input)).rejects.toBeInstanceOf(ValidationError);
     expect(listCards(db)).toEqual([]);
   });
 });
 
 describe('update', () => {
-  it('solo soglia: nessuna chiamata esterna, stato ricalcolato', async () => {
+  it('threshold only: no external calls, state recomputed', async () => {
     const card = await service.create(input);
     const updated = await service.update(card.id, { ...update, thresholdCents: 3000 });
     expect(updated).toMatchObject({ thresholdCents: 3000, alertState: 'above', lastNotifiedPriceCents: null, configVersion: 1 });
@@ -95,13 +95,13 @@ describe('update', () => {
     expect(ct.products).toHaveBeenCalledTimes(1);
   });
 
-  it("lingue nello stesso insieme ma in ordine diverso non contano come cambio filtri", async () => {
+  it('same set of languages in a different order does not count as a filter change', async () => {
     const card = await service.create({ ...input, languages: ['en', 'it'] });
     await service.update(card.id, { ...update, languages: ['it', 'en'] });
     expect(catalog.lookup).toHaveBeenCalledTimes(1);
   });
 
-  it('cambio filtri: reset stato, nuova versione, blueprint ricalcolati e nuovo prezzo', async () => {
+  it('filter change: state reset, new version, blueprints recomputed and new price', async () => {
     const card = await service.create(input);
     price = 5000;
     const updated = await service.update(card.id, { ...update, foil: true });
@@ -110,26 +110,26 @@ describe('update', () => {
     expect(listSnapshots(db, card.id).map((s) => s.configVersion)).toEqual([1, 2]);
   });
 
-  it('cambio filtri senza blueprint: la carta resta com’era', async () => {
+  it('filter change without blueprints: the card stays as it was', async () => {
     const card = await service.create(input);
-    catalog.resolveBlueprints.mockRejectedValueOnce(new ValidationError('nessuna stampa'));
+    catalog.resolveBlueprints.mockRejectedValueOnce(new ValidationError('no printings'));
     await expect(service.update(card.id, { ...update, expansionIds: [99] })).rejects.toBeInstanceOf(ValidationError);
     expect(getCard(db, card.id)).toMatchObject({ expansionIds: [1], configVersion: 1, alertState: 'below' });
   });
 
-  it('id inesistente → NotFoundError', async () => {
+  it('nonexistent id → NotFoundError', async () => {
     await expect(service.update(999, update)).rejects.toBeInstanceOf(NotFoundError);
   });
 });
 
 describe('delete', () => {
-  it('id inesistente → NotFoundError', () => {
+  it('nonexistent id → NotFoundError', () => {
     expect(() => service.delete(999)).toThrow(NotFoundError);
   });
 });
 
 describe('preview', () => {
-  it('calcola prezzo e preset senza salvare', async () => {
+  it('computes price and presets without saving', async () => {
     const result = await service.preview({ name: 'ragavan', expansionIds: [], languages: [], minCondition: 'Near Mint', foil: false });
     expect(result.priceCents).toBe(3800);
     expect(result.blueprintCount).toBe(1);

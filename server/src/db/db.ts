@@ -84,7 +84,7 @@ function migrate(db: Db): void {
 
 const depth = new WeakMap<Db, number>();
 
-/** Esegue `fn` in una transazione; le chiamate annidate riusano quella esterna. */
+/** Runs `fn` in a transaction; nested calls reuse the outer one. */
 export function transaction<T>(db: Db, fn: () => T): T {
   const current = depth.get(db) ?? 0;
   if (current > 0) {

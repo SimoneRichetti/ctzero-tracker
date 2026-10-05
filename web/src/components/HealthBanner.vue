@@ -17,10 +17,10 @@ onMounted(async () => {
 
 <template>
   <Message v-if="health && !health.cardtrader" severity="error" class="banner">
-    Token CardTrader mancante: imposta <code>CARDTRADER_TOKEN</code> nel file <code>.env</code> e riavvia.
+    Missing CardTrader token: set <code>CARDTRADER_TOKEN</code> in the <code>.env</code> file and restart.
   </Message>
   <Message v-if="health && !health.telegram" severity="warn" class="banner">
-    Telegram non configurato: imposta <code>TELEGRAM_BOT_TOKEN</code> e <code>TELEGRAM_CHAT_ID</code> nel file
-    <code>.env</code> e riavvia.
+    Telegram not configured: set <code>TELEGRAM_BOT_TOKEN</code> and <code>TELEGRAM_CHAT_ID</code> in the
+    <code>.env</code> file and restart.
   </Message>
 </template>

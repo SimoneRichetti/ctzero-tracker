@@ -10,8 +10,8 @@ import HealthBanner from './components/HealthBanner.vue';
   <header class="topbar">
     <span class="brand">🃏 CTZero Tracker</span>
     <nav>
-      <RouterLink to="/">Carte</RouterLink>
-      <RouterLink to="/impostazioni">Impostazioni</RouterLink>
+      <RouterLink to="/">Cards</RouterLink>
+      <RouterLink to="/settings">Settings</RouterLink>
     </nav>
   </header>
   <main class="content">

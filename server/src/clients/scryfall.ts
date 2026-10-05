@@ -18,7 +18,7 @@ interface ScryfallList<T> {
 
 export interface ScryfallOptions {
   baseUrl?: string;
-  /** Scryfall chiede 50–100 ms tra le richieste. */
+  /** Scryfall asks for 50–100 ms between requests. */
   throttleMs?: number;
   retryDelayMs?: number;
 }
@@ -54,7 +54,7 @@ export class ScryfallClient {
     return this.get<ScryfallCard>(`${this.baseUrl}/cards/named?exact=${encodeURIComponent(name)}`);
   }
 
-  /** Tutte le stampe della carta, seguendo la paginazione (175 per pagina). */
+  /** All printings of the card, following pagination (175 per page). */
   async prints(oracleId: string): Promise<ScryfallCard[]> {
     const out: ScryfallCard[] = [];
     let url: string | undefined =

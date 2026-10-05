@@ -44,7 +44,7 @@ const app = buildApp({
 await app.listen({ port, host });
 if (orphans > 0) app.log.warn(`${orphans} giri interrotti marcati come falliti`);
 scheduler.start({ catchup: orphans > 0 });
-app.log.info(`CTZero Tracker su http://localhost:${port}`);
+app.log.info(`CTZero Tracker on http://localhost:${port}`);
 
 async function shutdown(): Promise<void> {
   scheduler.stop();
