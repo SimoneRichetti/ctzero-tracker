@@ -1,0 +1,80 @@
+:root {
+  font-family: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  color-scheme: light;
+}
+body {
+  margin: 0;
+  background: #f6f7f9;
+  color: #1f2937;
+}
+.topbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.75rem 1.5rem;
+  background: #fff;
+  border-bottom: 1px solid #e5e7eb;
+}
+.brand {
+  font-weight: 700;
+  font-size: 1.1rem;
+}
+.topbar nav {
+  display: flex;
+  gap: 1rem;
+}
+.topbar a {
+  color: #374151;
+  text-decoration: none;
+}
+.topbar a.router-link-active {
+  font-weight: 600;
+  color: #10b981;
+}
+.content {
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 1.5rem;
+}
+.banner {
+  margin-bottom: 1rem;
+}
+.muted {
+  color: #6b7280;
+  font-size: 0.875rem;
+}
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  margin-bottom: 1rem;
+}
+.field.inline {
+  flex-direction: row;
+  align-items: center;
+  gap: 0.5rem;
+}
+.field label {
+  font-weight: 600;
+  font-size: 0.875rem;
+}
+.price-up {
+  color: #b91c1c;
+}
+.price-down {
+  color: #047857;
+}
+.card-thumb {
+  width: 146px;
+  border-radius: 8px;
+}
+.row-thumb {
+  width: 48px;
+  border-radius: 3px;
+  display: block;
+}
+.chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem;
+}

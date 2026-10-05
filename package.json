@@ -1,0 +1,19 @@
+{
+  "name": "ctzero-tracker",
+  "private": true,
+  "type": "module",
+  "workspaces": ["shared", "server", "web"],
+  "scripts": {
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit && npm run typecheck -w @ctzero/web",
+    "dev:server": "npm run dev -w @ctzero/server",
+    "dev:web": "npm run dev -w @ctzero/web",
+    "build": "npm run build -w @ctzero/web",
+    "start": "npm run build && npm run start -w @ctzero/server"
+  },
+  "devDependencies": {
+    "@types/node": "^24.19.1",
+    "typescript": "~5.9.3",
+    "vitest": "^5.0.3"
+  }
+}
