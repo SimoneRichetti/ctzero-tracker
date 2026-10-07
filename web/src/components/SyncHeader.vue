@@ -75,7 +75,7 @@ onUnmounted(() => clearTimeout(timer));
     <div class="sync-action">
       <div v-if="running" class="progress">
         <ProgressBar :value="progress" :show-value="false" />
-        <small>{{ running.cardsDone }}/{{ running.cardsTotal }} cards</small>
+        <small>{{ running.cardsDone }}/{{ running.cardsTotal }} items</small>
       </div>
       <Button
         label="Update now"

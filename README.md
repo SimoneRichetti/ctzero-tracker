@@ -1,6 +1,6 @@
 # CTZero Tracker
 
-Tracks the minimum **CardTrader Zero** price of Magic cards and notifies you on Telegram when it drops below your chosen threshold.
+Tracks the minimum **CardTrader Zero** price of Magic cards and sealed products (booster boxes, boosters, bundles, Commander precons, Secret Lairs, ...) and notifies you on Telegram when it drops below your chosen threshold.
 
 ## Requirements
 - Node.js 24 or later
@@ -37,6 +37,7 @@ Everything lives in `data/ctzero.db` (SQLite). To start from scratch, just delet
 ## Known limitations
 - CardTrader only returns the 25 cheapest listings per printing: if they are all non-Zero or in worse condition than the minimum, the card shows "No offers" even if valid, more expensive offers exist.
 - Shipping costs are not taken into account.
+- Sealed products: only listings still sealed are considered (opened Secret Lairs are ignored). Adding a product from a CardTrader link requires the product to have at least one listing; otherwise select it from its expansion.
 
 ## License
 MIT — see [LICENSE](LICENSE).

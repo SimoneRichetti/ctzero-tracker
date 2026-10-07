@@ -14,7 +14,9 @@ export interface CtBlueprint {
   id: number;
   name: string;
   expansion_id: number;
+  category_id?: number;
   scryfall_id?: string | null;
+  image_url?: string | null;
 }
 
 export interface CardTraderOptions {
@@ -66,7 +68,7 @@ export class CardTraderClient {
   }
 
   /** At most the 25 cheapest listings for the blueprint. */
-  async products(blueprintId: number, q: { foil: boolean; language?: string }): Promise<CtProduct[]> {
+  async products(blueprintId: number, q: { foil?: boolean; language?: string }): Promise<CtProduct[]> {
     const data = await this.get<Record<string, CtProduct[]>>('/marketplace/products', {
       blueprint_id: blueprintId,
       foil: q.foil,

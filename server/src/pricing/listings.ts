@@ -17,18 +17,29 @@ export function listingUrl(blueprintId: number): string {
   return `https://www.cardtrader.com/cards/${blueprintId}`;
 }
 
-export function isValidListing(p: CtProduct, f: ListingFilter): boolean {
+/** Rules shared by cards and sealed products. */
+export function isValidBaseListing(p: CtProduct, languages: Language[]): boolean {
   // Hard rule: only listings purchasable via CardTrader Zero.
   if (p.user?.can_sell_via_hub !== true) return false;
-  const rank = conditionRank(p.properties_hash.condition);
-  if (rank < 0 || rank > conditionRank(f.minCondition)) return false;
-  if (Boolean(p.properties_hash.mtg_foil) !== f.foil) return false;
-  if (f.languages.length > 0 && !f.languages.includes(p.properties_hash.mtg_language as Language)) return false;
+  if (languages.length > 0 && !languages.includes(p.properties_hash.mtg_language as Language)) return false;
   if (!(p.quantity > 0)) return false;
   if (p.on_vacation) return false;
   if (p.properties_hash.altered || p.properties_hash.signed || p.graded) return false;
   if (p.price.currency !== 'EUR') return false;
   return true;
+}
+
+export function isValidListing(p: CtProduct, f: ListingFilter): boolean {
+  if (!isValidBaseListing(p, f.languages)) return false;
+  const rank = conditionRank(p.properties_hash.condition);
+  if (rank < 0 || rank > conditionRank(f.minCondition)) return false;
+  if (Boolean(p.properties_hash.mtg_foil) !== f.foil) return false;
+  return true;
+}
+
+/** Sealed products have no condition or foil; opened ones (sealed: false) are excluded. */
+export function isValidSealedListing(p: CtProduct, languages: Language[]): boolean {
+  return isValidBaseListing(p, languages) && p.properties_hash.sealed !== false;
 }
 
 export function cheapestListing(

@@ -122,6 +122,63 @@ describe('update', () => {
   });
 });
 
+describe('changes during the immediate refresh', () => {
+  /** Makes the next CardTrader call hang until the returned function is called. */
+  function holdNextCall(): (outcome?: Error) => void {
+    let release!: (outcome?: Error) => void;
+    const gate = new Promise<Error | undefined>((resolve) => (release = resolve));
+    const original = ct.products.getMockImplementation()!;
+    ct.products.mockImplementationOnce(async (...args: any[]) => {
+      const outcome = await gate;
+      if (outcome) throw outcome;
+      return original(...args);
+    });
+    return release;
+  }
+
+  it('a card deleted while being priced: create still succeeds and nothing is written', async () => {
+    const release = holdNextCall();
+    const pending = service.create(input);
+    await vi.waitFor(() => expect(ct.products).toHaveBeenCalled());
+    service.delete(listCards(db)[0]!.id);
+    release();
+    await expect(pending).resolves.toMatchObject({ name: 'Ragavan, Nimble Pilferer' });
+    expect(listCards(db)).toEqual([]);
+  });
+
+  it('a card deleted while a failing price call is pending: create still succeeds', async () => {
+    const release = holdNextCall();
+    const pending = service.create(input);
+    await vi.waitFor(() => expect(ct.products).toHaveBeenCalled());
+    service.delete(listCards(db)[0]!.id);
+    release(new Error('timeout'));
+    await expect(pending).resolves.toMatchObject({ name: 'Ragavan, Nimble Pilferer' });
+  });
+
+  it('a stale refresh does not overwrite newer filters', async () => {
+    const release = holdNextCall();
+    const pending = service.create(input);
+    await vi.waitFor(() => expect(ct.products).toHaveBeenCalled());
+    const id = listCards(db)[0]!.id;
+    price = 5000;
+    await service.update(id, { ...update, foil: true });
+    price = 1000;
+    release();
+    await pending;
+    expect(getCard(db, id)).toMatchObject({ foil: true, configVersion: 2, lastPriceCents: 5000, alertState: 'above' });
+    expect(listSnapshots(db, id).map((s) => s.configVersion)).toEqual([2]);
+  });
+
+  it('a threshold changed during the refresh is used for the evaluation', async () => {
+    const release = holdNextCall();
+    const pending = service.create(input);
+    await vi.waitFor(() => expect(ct.products).toHaveBeenCalled());
+    await service.update(listCards(db)[0]!.id, { ...update, thresholdCents: 3000 });
+    release();
+    expect(await pending).toMatchObject({ thresholdCents: 3000, lastPriceCents: 3800, alertState: 'above' });
+  });
+});
+
 describe('delete', () => {
   it('nonexistent id → NotFoundError', () => {
     expect(() => service.delete(999)).toThrow(NotFoundError);

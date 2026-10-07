@@ -5,15 +5,21 @@ import {
   cardFiltersSchema,
   cardInputSchema,
   cardUpdateSchema,
+  sealedInputSchema,
+  sealedPreviewSchema,
+  sealedUpdateSchema,
   settingsSchema,
   type CardLookupDto,
+  type Expansion,
   type HealthDto,
+  type SealedProduct,
   type SyncStatusDto,
 } from '@ctzero/shared';
 import Fastify, { type FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import type { CardService } from '../cards/card-service';
 import type { Catalog } from '../catalog/catalog';
+import { parseBlueprintRef, type SealedCatalog } from '../catalog/sealed-catalog';
 import { HttpError } from '../clients/http';
 import type { ScryfallClient } from '../clients/scryfall';
 import type { TelegramClient } from '../clients/telegram';
@@ -22,11 +28,14 @@ import { getLastFinishedRun, getRunningRun } from '../db/runs-repo';
 import { getSettings, saveSettings } from '../db/settings-repo';
 import { NotFoundError, ValidationError } from '../errors';
 import type { Scheduler } from '../scheduler/scheduler';
+import type { SealedService } from '../sealed/sealed-service';
 import type { SyncService } from '../sync/sync-service';
 
 export interface AppDeps {
   db: Db;
   cards: Pick<CardService, 'list' | 'create' | 'update' | 'delete' | 'preview'>;
+  sealed: Pick<SealedService, 'list' | 'create' | 'update' | 'delete' | 'preview'>;
+  sealedCatalog: Pick<SealedCatalog, 'listExpansions' | 'sealedProducts' | 'sealedProduct'>;
   sync: Pick<SyncService, 'start'>;
   scheduler: Pick<Scheduler, 'getNextRunAt' | 'reschedule'>;
   catalog: Pick<Catalog, 'lookup'>;
@@ -40,6 +49,8 @@ export interface AppDeps {
 const idParams = z.object({ id: z.coerce.number().int().positive() });
 const autocompleteQuery = z.object({ q: z.string().default('') });
 const printingsQuery = z.object({ name: z.string().trim().min(1) });
+const sealedCatalogQuery = z.object({ expansionId: z.coerce.number().int().positive() });
+const resolveQuery = z.object({ ref: z.string().trim().min(1) });
 
 function formatZodError(err: z.ZodError): string {
   return err.issues.map((i) => (i.path.length > 0 ? `${i.path.join('.')}: ${i.message}` : i.message)).join('; ');
@@ -84,6 +95,40 @@ export function buildApp(deps: AppDeps): FastifyInstance {
     const lookup = await deps.catalog.lookup(printingsQuery.parse(req.query).name);
     return { name: lookup.name, imageUrl: lookup.imageUrl, printings: lookup.printings };
   });
+
+  app.get('/api/sealed', async () => deps.sealed.list());
+
+  app.post('/api/sealed', async (req, reply) => {
+    const item = await deps.sealed.create(sealedInputSchema.parse(req.body));
+    return reply.status(201).send(item);
+  });
+
+  app.put('/api/sealed/:id', async (req) => {
+    const { id } = idParams.parse(req.params);
+    return deps.sealed.update(id, sealedUpdateSchema.parse(req.body));
+  });
+
+  app.delete('/api/sealed/:id', async (req, reply) => {
+    const { id } = idParams.parse(req.params);
+    deps.sealed.delete(id);
+    return reply.status(204).send();
+  });
+
+  app.post('/api/sealed/preview', async (req) => deps.sealed.preview(sealedPreviewSchema.parse(req.body)));
+
+  app.get('/api/expansions', async (): Promise<Expansion[]> => deps.sealedCatalog.listExpansions());
+
+  app.get(
+    '/api/sealed/catalog',
+    async (req): Promise<SealedProduct[]> =>
+      deps.sealedCatalog.sealedProducts(sealedCatalogQuery.parse(req.query).expansionId),
+  );
+
+  app.get(
+    '/api/sealed/resolve',
+    async (req): Promise<SealedProduct> =>
+      deps.sealedCatalog.sealedProduct(parseBlueprintRef(resolveQuery.parse(req.query).ref)),
+  );
 
   app.post('/api/sync', async (_req, reply) => {
     const result = deps.sync.start('manual');

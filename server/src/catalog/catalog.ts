@@ -25,9 +25,10 @@ export class Catalog {
     private readonly now: () => number = Date.now,
   ) {}
 
-  async mtgExpansions(): Promise<CtExpansion[]> {
+  /** Magic expansions, from a cache no older than `maxAgeMs`. */
+  async mtgExpansions(maxAgeMs = EXPANSIONS_TTL_MS): Promise<CtExpansion[]> {
     const cached = this.expansionsCache;
-    if (cached && this.now() - cached.fetchedAt < EXPANSIONS_TTL_MS) return cached.list;
+    if (cached && this.now() - cached.fetchedAt < maxAgeMs) return cached.list;
     const list = (await this.ct.expansions()).filter((e) => e.game_id === MTG_GAME_ID);
     this.expansionsCache = { fetchedAt: this.now(), list };
     return list;

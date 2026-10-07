@@ -135,15 +135,25 @@ export class CardService {
     if (!deleteCard(this.deps.db, id)) throw new NotFoundError('Card not found');
   }
 
-  /** Refreshes the price of a single card without sending notifications. */
+  /**
+   * Refreshes the price of a single card without sending notifications.
+   * If the card was deleted or its filters changed while it was being priced,
+   * the result is stale and is not written.
+   */
   private async refreshSilently(card: TrackedCard, blueprints: CardBlueprint[]): Promise<TrackedCard> {
     const { db, ct } = this.deps;
     const now = this.now();
     const iso = now.toISOString();
+    const current = () => {
+      const latest = getCard(db, card.id);
+      return latest && latest.configVersion === card.configVersion ? latest : null;
+    };
     try {
       const result = await priceCard(ct, blueprints, card);
       const priceCents = result.status === 'ok' ? result.priceCents : null;
       return transaction(db, () => {
+        const latest = current();
+        if (!latest) return getCard(db, card.id) ?? card;
         insertSnapshot(db, { cardId: card.id, configVersion: card.configVersion, syncedAt: iso, priceCents });
         return updateCard(
           db,
@@ -154,12 +164,13 @@ export class CardService {
             lastSyncedAt: iso,
             lastSyncStatus: result.status,
             lastError: null,
-            ...evaluateSilently(priceCents, card.thresholdCents),
+            ...evaluateSilently(priceCents, latest.thresholdCents),
           },
           now,
         );
       });
     } catch (e) {
+      if (!current()) return getCard(db, card.id) ?? card;
       return updateCard(db, card.id, { lastSyncedAt: iso, lastSyncStatus: 'error', lastError: errorMessage(e) }, now);
     }
   }

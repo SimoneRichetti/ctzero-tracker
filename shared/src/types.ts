@@ -73,6 +73,46 @@ export interface CardLookupDto {
   printings: Printing[];
 }
 
+export interface Expansion {
+  id: number;
+  code: string;
+  name: string;
+}
+
+/** A sealed product on CardTrader (one blueprint). */
+export interface SealedProduct {
+  blueprintId: number;
+  name: string;
+  expansionId: number;
+  expansionName: string;
+  /** Display name from the sealed category whitelist (e.g. "Booster Box"). */
+  categoryName: string;
+  imageUrl: string | null;
+}
+
+export interface TrackedSealed {
+  id: number;
+  name: string;
+  blueprintId: number;
+  expansionId: number;
+  expansionName: string;
+  categoryName: string;
+  imageUrl: string | null;
+  /** [] = any language. */
+  languages: Language[];
+  thresholdCents: number;
+  configVersion: number;
+  lastPriceCents: number | null;
+  lastListing: Listing | null;
+  lastSyncedAt: string | null;
+  lastSyncStatus: SyncStatus | null;
+  lastError: string | null;
+  alertState: AlertState | null;
+  lastNotifiedPriceCents: number | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
 export interface SyncRun {
   id: number;
   trigger: SyncTrigger;

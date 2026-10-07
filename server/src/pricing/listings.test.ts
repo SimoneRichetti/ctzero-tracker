@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { makeProduct } from '../test-utils';
-import { cheapestListing, isValidListing, type ListingFilter } from './listings';
+import { cheapestListing, isValidListing, isValidSealedListing, type ListingFilter } from './listings';
 
 const filter: ListingFilter = { minCondition: 'Near Mint', foil: false, languages: [] };
 const names = new Map([[10, 'Modern Horizons 2']]);
@@ -69,5 +69,29 @@ describe('cheapestListing', () => {
   it('returns null when no listing is valid', () => {
     expect(cheapestListing([makeProduct({ hub: false })], filter, names)).toBeNull();
     expect(cheapestListing([], filter, names)).toBeNull();
+  });
+});
+
+describe('isValidSealedListing', () => {
+  const sealed = (props: Parameters<typeof makeProduct>[0] = {}) =>
+    makeProduct({ ...props, props: { condition: undefined, mtg_foil: undefined, ...props.props } });
+
+  it('accepts a CT Zero listing without condition or foil', () => {
+    expect(isValidSealedListing(sealed(), [])).toBe(true);
+    expect(isValidSealedListing(sealed({ props: { sealed: true } }), [])).toBe(true);
+  });
+
+  it('rejects opened products (sealed: false)', () => {
+    expect(isValidSealedListing(sealed({ props: { sealed: false } }), [])).toBe(false);
+  });
+
+  it('applies the common rules', () => {
+    expect(isValidSealedListing(sealed({ hub: false }), [])).toBe(false);
+    expect(isValidSealedListing(sealed({ quantity: 0 }), [])).toBe(false);
+    expect(isValidSealedListing(sealed({ on_vacation: true }), [])).toBe(false);
+    expect(isValidSealedListing(sealed({ graded: true }), [])).toBe(false);
+    expect(isValidSealedListing(sealed({ price: { cents: 100, currency: 'USD' } }), [])).toBe(false);
+    expect(isValidSealedListing(sealed({ props: { mtg_language: 'jp' } }), ['en'])).toBe(false);
+    expect(isValidSealedListing(sealed({ props: { mtg_language: 'jp' } }), ['en', 'jp'])).toBe(true);
   });
 });

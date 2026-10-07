@@ -1,14 +1,18 @@
 import { CONDITION_ABBR, formatEuro, type Condition, type Listing } from '@ctzero/shared';
 import type { AlertEvent } from './rules';
 
+export type ItemKind = 'card' | 'sealed';
+
 export interface ReportItem {
-  cardName: string;
+  kind: ItemKind;
+  name: string;
   listing: Listing | null;
   event: AlertEvent;
 }
 
 export interface ReportError {
-  cardName: string;
+  kind: ItemKind;
+  name: string;
   message: string;
 }
 
@@ -26,11 +30,18 @@ function formatDate(at: Date): string {
   return `${pad(at.getMonth() + 1)}/${pad(at.getDate())} ${pad(hours % 12 || 12)}:${pad(at.getMinutes())} ${period}`;
 }
 
-function describeListing(l: Listing | null): string {
+function describeListing(kind: ItemKind, l: Listing | null): string {
   if (!l) return '';
-  const parts = [l.expansionName, CONDITION_ABBR[l.condition as Condition] ?? l.condition, l.language.toUpperCase()];
-  if (l.foil) parts.push('foil');
-  return ` (${escapeHtml(parts.join(', '))})`;
+  const parts =
+    kind === 'sealed'
+      ? [l.expansionName, l.language.toUpperCase()]
+      : [l.expansionName, CONDITION_ABBR[l.condition as Condition] ?? l.condition, l.language.toUpperCase()];
+  if (kind === 'card' && l.foil) parts.push('foil');
+  return ` (${escapeHtml(parts.filter(Boolean).join(', '))})`;
+}
+
+function displayName(kind: ItemKind, name: string): string {
+  return (kind === 'sealed' ? '📦 ' : '') + escapeHtml(name);
 }
 
 function link(l: Listing | null): string {
@@ -38,13 +49,13 @@ function link(l: Listing | null): string {
 }
 
 function itemLine(item: ReportItem): string {
-  const name = escapeHtml(item.cardName);
+  const name = displayName(item.kind, item.name);
   const e = item.event;
   switch (e.kind) {
     case 'below':
-      return `• ${name}${describeListing(item.listing)} — ${formatEuro(e.priceCents)} (threshold ${formatEuro(e.thresholdCents)}, ${formatEuro(e.thresholdCents - e.priceCents)} below)${link(item.listing)}`;
+      return `• ${name}${describeListing(item.kind, item.listing)} — ${formatEuro(e.priceCents)} (threshold ${formatEuro(e.thresholdCents)}, ${formatEuro(e.thresholdCents - e.priceCents)} below)${link(item.listing)}`;
     case 'further_drop':
-      return `• ${name}${describeListing(item.listing)} — ${formatEuro(e.priceCents)} (was ${formatEuro(e.previousCents)})${link(item.listing)}`;
+      return `• ${name}${describeListing(item.kind, item.listing)} — ${formatEuro(e.priceCents)} (was ${formatEuro(e.previousCents)})${link(item.listing)}`;
     case 'back_above':
       return e.priceCents === null
         ? `• ${name} — no valid CT Zero offers (threshold ${formatEuro(e.thresholdCents)})`
@@ -62,11 +73,13 @@ export function buildReport(items: ReportItem[], errors: ReportError[], at: Date
   if (items.length === 0 && errors.length === 0) return null;
   const blocks: string[] = [`🃏 <b>CTZero Tracker</b> — ${formatDate(at)}`];
   for (const section of SECTIONS) {
-    const lines = items.filter((i) => i.event.kind === section.kind).map(itemLine);
+    const inSection = items.filter((i) => i.event.kind === section.kind);
+    const ordered = [...inSection.filter((i) => i.kind === 'card'), ...inSection.filter((i) => i.kind === 'sealed')];
+    const lines = ordered.map(itemLine);
     if (lines.length > 0) blocks.push([section.title, ...lines].join('\n'));
   }
   if (errors.length > 0) {
-    const lines = errors.map((e) => `• ${escapeHtml(e.cardName)} — ${escapeHtml(e.message)}`);
+    const lines = errors.map((e) => `• ${displayName(e.kind, e.name)} — ${escapeHtml(e.message)}`);
     blocks.push(['❌ <b>Errors</b>', ...lines].join('\n'));
   }
   return blocks.join('\n\n');

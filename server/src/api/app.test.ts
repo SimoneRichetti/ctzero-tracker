@@ -28,7 +28,27 @@ function setup() {
   };
   const scryfall = { autocomplete: vi.fn(async () => ['Ragavan, Nimble Pilferer']) };
   const telegram = { configured: true, sendMessage: vi.fn(async () => {}) };
-  const deps = { db, cards, sync, scheduler, catalog, scryfall, telegram, cardtraderConfigured: false };
+  const product = {
+    blueprintId: 279368,
+    name: 'Modern Horizons 3: Play Booster Box',
+    expansionId: 3627,
+    expansionName: 'Modern Horizons 3',
+    categoryName: 'Booster Box',
+    imageUrl: null,
+  };
+  const sealed = {
+    list: vi.fn(() => []),
+    create: vi.fn(async (input: object) => ({ id: 1, ...input })),
+    update: vi.fn(async (id: number, input: object) => ({ id, ...input })),
+    delete: vi.fn(),
+    preview: vi.fn(async () => ({ priceCents: 19000, listing: null, presets: [], blueprintCount: 1 })),
+  };
+  const sealedCatalog = {
+    listExpansions: vi.fn(async () => [{ id: 3627, code: 'mh3', name: 'Modern Horizons 3' }]),
+    sealedProducts: vi.fn(async () => [product]),
+    sealedProduct: vi.fn(async () => product),
+  };
+  const deps = { db, cards, sealed, sealedCatalog, sync, scheduler, catalog, scryfall, telegram, cardtraderConfigured: false };
   return { app: buildApp(deps as unknown as AppDeps), ...deps };
 }
 
@@ -176,5 +196,71 @@ describe('sync, settings, health API', () => {
     const { app, telegram } = setup();
     expect((await app.inject({ method: 'POST', url: '/api/telegram/test' })).statusCode).toBe(204);
     expect(telegram.sendMessage).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('sealed API', () => {
+  const sealedBody = { blueprintId: 279368, languages: ['en'], thresholdCents: 20000 };
+
+  it('CRUD routes delegate to the service', async () => {
+    const { app, sealed } = setup();
+    expect((await app.inject({ method: 'GET', url: '/api/sealed' })).json()).toEqual([]);
+    const created = await app.inject({ method: 'POST', url: '/api/sealed', payload: sealedBody });
+    expect(created.statusCode).toBe(201);
+    expect(sealed.create).toHaveBeenCalledWith(sealedBody);
+    const updated = await app.inject({ method: 'PUT', url: '/api/sealed/3', payload: sealedBody });
+    expect(updated.statusCode).toBe(200);
+    expect(sealed.update).toHaveBeenCalledWith(3, { languages: ['en'], thresholdCents: 20000 });
+    expect((await app.inject({ method: 'DELETE', url: '/api/sealed/3' })).statusCode).toBe(204);
+    expect(sealed.delete).toHaveBeenCalledWith(3);
+  });
+
+  it('POST /api/sealed invalid → 400', async () => {
+    const { app } = setup();
+    const res = await app.inject({ method: 'POST', url: '/api/sealed', payload: { ...sealedBody, blueprintId: 0 } });
+    expect(res.statusCode).toBe(400);
+    expect(res.json().error).toContain('blueprintId');
+  });
+
+  it('POST /api/sealed/preview', async () => {
+    const { app, sealed } = setup();
+    const res = await app.inject({ method: 'POST', url: '/api/sealed/preview', payload: { blueprintId: 279368, languages: [] } });
+    expect(res.statusCode).toBe(200);
+    expect(sealed.preview).toHaveBeenCalledWith({ blueprintId: 279368, languages: [] });
+  });
+
+  it('GET /api/expansions and /api/sealed/catalog', async () => {
+    const { app, sealedCatalog } = setup();
+    expect((await app.inject({ method: 'GET', url: '/api/expansions' })).json()).toEqual([
+      { id: 3627, code: 'mh3', name: 'Modern Horizons 3' },
+    ]);
+    const res = await app.inject({ method: 'GET', url: '/api/sealed/catalog?expansionId=3627' });
+    expect(res.statusCode).toBe(200);
+    expect(sealedCatalog.sealedProducts).toHaveBeenCalledWith(3627);
+    expect((await app.inject({ method: 'GET', url: '/api/sealed/catalog?expansionId=abc' })).statusCode).toBe(400);
+  });
+
+  it('GET /api/sealed/resolve parses the link', async () => {
+    const { app, sealedCatalog } = setup();
+    const ref = encodeURIComponent('https://www.cardtrader.com/en-EU/cards/389300-the-hobbit-play-booster-box-the-hobbit');
+    const res = await app.inject({ method: 'GET', url: `/api/sealed/resolve?ref=${ref}` });
+    expect(res.statusCode).toBe(200);
+    expect(sealedCatalog.sealedProduct).toHaveBeenCalledWith(389300);
+  });
+
+  it('GET /api/sealed/resolve with an unrecognized link → 422', async () => {
+    const { app, sealedCatalog } = setup();
+    const ref = encodeURIComponent('https://www.cardtrader.com/en/cards/the-hobbit-play-booster-box');
+    const res = await app.inject({ method: 'GET', url: `/api/sealed/resolve?ref=${ref}` });
+    expect(res.statusCode).toBe(422);
+    expect(sealedCatalog.sealedProduct).not.toHaveBeenCalled();
+  });
+
+  it('catalog validation errors → 422', async () => {
+    const { app, sealedCatalog } = setup();
+    sealedCatalog.sealedProduct.mockRejectedValueOnce(new ValidationError('CardTrader item 5 is not a sealed product'));
+    const res = await app.inject({ method: 'GET', url: '/api/sealed/resolve?ref=5' });
+    expect(res.statusCode).toBe(422);
+    expect(res.json()).toEqual({ error: 'CardTrader item 5 is not a sealed product' });
   });
 });

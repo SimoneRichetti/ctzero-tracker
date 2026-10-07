@@ -66,6 +66,16 @@ describe('Catalog.lookup', () => {
     await catalog.lookup('c');
     expect(ct.expansions).toHaveBeenCalledTimes(2);
   });
+
+  it('with a maximum age, refetches expansions older than that', async () => {
+    await catalog.mtgExpansions();
+    clock = 5 * 60 * 1000;
+    await catalog.mtgExpansions(10 * 60 * 1000);
+    expect(ct.expansions).toHaveBeenCalledTimes(1);
+    clock = 11 * 60 * 1000;
+    await catalog.mtgExpansions(10 * 60 * 1000);
+    expect(ct.expansions).toHaveBeenCalledTimes(2);
+  });
 });
 
 describe('Catalog.resolveBlueprints', () => {

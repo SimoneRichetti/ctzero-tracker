@@ -1,5 +1,13 @@
 import { describe, expect, it } from 'vitest';
-import { DEFAULT_SETTINGS, cardInputSchema, cardUpdateSchema, settingsSchema } from './schemas';
+import {
+  DEFAULT_SETTINGS,
+  cardInputSchema,
+  cardUpdateSchema,
+  sealedInputSchema,
+  sealedPreviewSchema,
+  sealedUpdateSchema,
+  settingsSchema,
+} from './schemas';
 
 const valid = {
   name: 'Lightning Bolt',
@@ -48,5 +56,41 @@ describe('settingsSchema', () => {
     expect(settingsSchema.safeParse({ ...DEFAULT_SETTINGS, dailyTime: '7:00' }).success).toBe(false);
     expect(settingsSchema.safeParse({ ...DEFAULT_SETTINGS, intervalHours: 0 }).success).toBe(false);
     expect(settingsSchema.safeParse({ ...DEFAULT_SETTINGS, intervalHours: 169 }).success).toBe(false);
+  });
+});
+
+describe('sealed schemas', () => {
+  const sealed = { blueprintId: 279368, languages: ['en', 'jp'], thresholdCents: 20000 };
+
+  it('accepts valid input', () => {
+    expect(sealedInputSchema.safeParse(sealed).success).toBe(true);
+    expect(sealedPreviewSchema.safeParse({ blueprintId: 1, languages: [] }).success).toBe(true);
+  });
+
+  it('rejects invalid blueprint ids, thresholds and languages', () => {
+    expect(sealedInputSchema.safeParse({ ...sealed, blueprintId: 0 }).success).toBe(false);
+    expect(sealedInputSchema.safeParse({ ...sealed, blueprintId: 1.5 }).success).toBe(false);
+    expect(sealedInputSchema.safeParse({ ...sealed, thresholdCents: 0 }).success).toBe(false);
+    expect(sealedInputSchema.safeParse({ ...sealed, languages: ['xx'] }).success).toBe(false);
+  });
+
+  it('update ignores the blueprint and the expansion', () => {
+    expect(sealedUpdateSchema.parse({ ...sealed, expansionId: 3627 })).toEqual({ languages: ['en', 'jp'], thresholdCents: 20000 });
+  });
+
+  it('accepts an optional expansion id', () => {
+    expect(sealedInputSchema.parse({ ...sealed, expansionId: 3627 })).toEqual({ ...sealed, expansionId: 3627 });
+    expect(sealedPreviewSchema.safeParse({ blueprintId: 1, languages: [], expansionId: 0 }).success).toBe(false);
+  });
+});
+
+describe('list deduplication', () => {
+  it('removes duplicate languages and expansions, keeping the first occurrence', () => {
+    expect(cardInputSchema.parse({ ...valid, languages: ['en', 'it', 'en'], expansionIds: [12, 12] })).toMatchObject({
+      languages: ['en', 'it'],
+      expansionIds: [12],
+    });
+    expect(sealedInputSchema.parse({ blueprintId: 1, languages: ['en', 'en'], thresholdCents: 1 }).languages).toEqual(['en']);
+    expect(sealedUpdateSchema.parse({ languages: ['it', 'it'], thresholdCents: 1 }).languages).toEqual(['it']);
   });
 });

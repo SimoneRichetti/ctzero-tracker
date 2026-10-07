@@ -1,4 +1,4 @@
-import { DEFAULT_SETTINGS, type CardBlueprint, type SyncTrigger, type TrackedCard } from '@ctzero/shared';
+import { DEFAULT_SETTINGS, type CardBlueprint, type SyncTrigger, type TrackedCard, type TrackedSealed } from '@ctzero/shared';
 import { beforeEach, describe, expect, it, vi, type Mock } from 'vitest';
 import type { CardLookup } from '../catalog/catalog';
 import { HttpError } from '../clients/http';
@@ -14,6 +14,7 @@ import {
 } from '../db/cards-repo';
 import { openDb, type Db } from '../db/db';
 import { getRun } from '../db/runs-repo';
+import { deleteSealed, getSealed, insertSealed, listSealedSnapshots, updateSealed } from '../db/sealed-repo';
 import { saveSettings } from '../db/settings-repo';
 import { makeProduct } from '../test-utils';
 import { SyncService } from './sync-service';
@@ -63,6 +64,24 @@ function addCard(name: string, blueprintId: number, thresholdCents: number, extr
   );
   replaceBlueprints(db, card.id, [{ blueprintId, expansionId: 1, expansionName: 'MH2' }]);
   return updateCard(db, card.id, { blueprintsResolvedAt: t0.toISOString(), alertState: 'above' }, t0);
+}
+
+function addSealed(name: string, blueprintId: number, thresholdCents: number): TrackedSealed {
+  const s = insertSealed(
+    db,
+    {
+      name,
+      blueprintId,
+      expansionId: 3627,
+      expansionName: 'Modern Horizons 3',
+      categoryName: 'Booster Box',
+      imageUrl: null,
+      languages: [],
+      thresholdCents,
+    },
+    t0,
+  );
+  return updateSealed(db, s.id, { alertState: 'above' }, t0);
 }
 
 async function run(trigger: SyncTrigger = 'manual') {
@@ -255,5 +274,78 @@ describe('SyncService', () => {
     service.onFinished(listener);
     await run();
     expect(listener).toHaveBeenCalledWith(expect.objectContaining({ status: 'ok' }));
+  });
+});
+
+describe('SyncService with sealed products', () => {
+  it('prices cards and sealed in one run with a single report', async () => {
+    addCard('Ragavan', 100, 4000);
+    const box = addSealed('MH3 Play Booster Box', 500, 20000);
+    prices.set(100, 3800).set(500, 19000);
+    const result = await run();
+    expect(result).toMatchObject({ status: 'ok', cardsTotal: 2, cardsDone: 2, cardsError: 0, reportSent: true });
+    expect(getSealed(db, box.id)).toMatchObject({
+      lastPriceCents: 19000,
+      lastSyncStatus: 'ok',
+      alertState: 'below',
+      lastNotifiedPriceCents: 19000,
+      lastSyncedAt: t0.toISOString(),
+    });
+    expect(listSealedSnapshots(db, box.id)).toHaveLength(1);
+    expect(telegram.sendMessage).toHaveBeenCalledTimes(1);
+    const text = telegram.sendMessage.mock.calls[0]![0] as string;
+    expect(text.indexOf('Ragavan')).toBeGreaterThan(-1);
+    expect(text.indexOf('📦 MH3 Play Booster Box')).toBeGreaterThan(text.indexOf('Ragavan'));
+  });
+
+  it('error on a sealed product → partial, listed in Errors with 📦', async () => {
+    const box = addSealed('MH3 Play Booster Box', 500, 20000);
+    prices.set(500, new HttpError(500, 'HTTP 500 from api.cardtrader.com'));
+    expect(await run()).toMatchObject({ status: 'partial', cardsDone: 1, cardsError: 1 });
+    expect(getSealed(db, box.id)).toMatchObject({ lastSyncStatus: 'error', lastError: 'HTTP 500 from api.cardtrader.com' });
+    expect(telegram.sendMessage.mock.calls[0]![0]).toContain('📦 MH3 Play Booster Box — HTTP 500');
+  });
+
+  it('401 on a card stops the run before sealed products', async () => {
+    addCard('A', 100, 4000);
+    const box = addSealed('MH3 Play Booster Box', 500, 20000);
+    prices.set(100, new HttpError(401, 'HTTP 401 from api.cardtrader.com')).set(500, 19000);
+    expect((await run()).status).toBe('failed');
+    expect(getSealed(db, box.id)!.lastSyncedAt).toBeNull();
+  });
+
+  it('401 on a sealed product → run failed, only the fatal alert is sent', async () => {
+    addCard('A', 100, 4000);
+    const box = addSealed('MH3 Play Booster Box', 500, 20000);
+    addSealed('Zeta Box', 600, 20000);
+    prices.set(100, 3800).set(500, new HttpError(401, 'HTTP 401 from api.cardtrader.com')).set(600, 100);
+    const result = await run();
+    expect(result).toMatchObject({ status: 'failed', cardsTotal: 3, cardsDone: 1, reportSent: true });
+    expect(result.error).toContain('401');
+    expect(telegram.sendMessage).toHaveBeenCalledTimes(1);
+    expect(telegram.sendMessage.mock.calls[0]![0]).toContain('Price update failed');
+    expect(getSealed(db, box.id)!.lastSyncedAt).toBeNull();
+    expect(ct.products).toHaveBeenCalledTimes(2);
+  });
+
+  it('a sealed product deleted while being priced is skipped silently', async () => {
+    const box = addSealed('MH3 Play Booster Box', 500, 20000);
+    ct.products.mockImplementationOnce(async () => {
+      deleteSealed(db, box.id);
+      return [makeProduct({ blueprint_id: 500, price: { cents: 19000, currency: 'EUR' } })];
+    });
+    expect(await run()).toMatchObject({ status: 'ok', cardsError: 0 });
+    expect(telegram.sendMessage).not.toHaveBeenCalled();
+  });
+
+  it('a threshold change during pricing is not overwritten nor notified', async () => {
+    const box = addSealed('MH3 Play Booster Box', 500, 20000);
+    ct.products.mockImplementationOnce(async () => {
+      updateSealed(db, box.id, { thresholdCents: 10000 });
+      return [makeProduct({ blueprint_id: 500, price: { cents: 19000, currency: 'EUR' } })];
+    });
+    await run();
+    expect(getSealed(db, box.id)).toMatchObject({ thresholdCents: 10000, lastPriceCents: null });
+    expect(telegram.sendMessage).not.toHaveBeenCalled();
   });
 });

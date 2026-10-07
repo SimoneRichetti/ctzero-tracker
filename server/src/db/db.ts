@@ -61,6 +61,37 @@ export const MIGRATIONS: string[] = [
     value TEXT NOT NULL
   );
   `,
+  `
+  CREATE TABLE tracked_sealed (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT NOT NULL,
+    blueprint_id INTEGER NOT NULL,
+    expansion_id INTEGER NOT NULL,
+    expansion_name TEXT NOT NULL,
+    category_name TEXT NOT NULL,
+    image_url TEXT,
+    languages TEXT NOT NULL DEFAULT '[]',
+    threshold_cents INTEGER NOT NULL,
+    config_version INTEGER NOT NULL DEFAULT 1,
+    last_price_cents INTEGER,
+    last_listing TEXT,
+    last_synced_at TEXT,
+    last_sync_status TEXT,
+    last_error TEXT,
+    alert_state TEXT,
+    last_notified_price_cents INTEGER,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+  );
+  CREATE TABLE sealed_price_snapshots (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    tracked_sealed_id INTEGER NOT NULL REFERENCES tracked_sealed(id) ON DELETE CASCADE,
+    config_version INTEGER NOT NULL,
+    synced_at TEXT NOT NULL,
+    price_cents INTEGER
+  );
+  CREATE INDEX sealed_price_snapshots_sealed ON sealed_price_snapshots(tracked_sealed_id);
+  `,
 ];
 
 export function openDb(path: string): Db {

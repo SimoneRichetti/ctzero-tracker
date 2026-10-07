@@ -1,4 +1,4 @@
-import type { TrackedCard } from '@ctzero/shared';
+import type { TrackedCard, TrackedSealed } from '@ctzero/shared';
 import { describe, expect, it } from 'vitest';
 import { cardStatus, deltaPercent, formatDateTime, sortForDisplay } from './card-status';
 
@@ -63,5 +63,36 @@ describe('formatDateTime', () => {
   it('dash when missing', () => {
     expect(formatDateTime(null)).toBe('—');
     expect(formatDateTime('2026-10-02T16:05:00.000Z')).toMatch(/10\/02\/2026/);
+  });
+});
+
+describe('sealed products', () => {
+  it('status, delta and sort work on TrackedSealed too', () => {
+    const base: TrackedSealed = {
+      id: 1,
+      name: 'Box',
+      blueprintId: 1,
+      expansionId: 1,
+      expansionName: 'MH3',
+      categoryName: 'Booster Box',
+      imageUrl: null,
+      languages: [],
+      thresholdCents: 20000,
+      configVersion: 1,
+      lastPriceCents: 19000,
+      lastListing: null,
+      lastSyncedAt: null,
+      lastSyncStatus: 'ok',
+      lastError: null,
+      alertState: 'below',
+      lastNotifiedPriceCents: 19000,
+      createdAt: '',
+      updatedAt: '',
+    };
+    const other: TrackedSealed = { ...base, id: 2, name: 'Another', alertState: 'above', lastPriceCents: 25000 };
+    expect(cardStatus(base)).toBe('below');
+    expect(deltaPercent(base)).toBe(-5);
+    const sorted: TrackedSealed[] = sortForDisplay([other, base]);
+    expect(sorted.map((s) => s.id)).toEqual([1, 2]);
   });
 });
