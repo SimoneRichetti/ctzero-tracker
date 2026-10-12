@@ -10,7 +10,7 @@ import { useToast } from 'primevue/usetoast';
 import { computed, onMounted, ref, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { api } from '../api';
-import { bulkCards } from '../bulk-cards';
+import { BulkStoppedError, bulkCards } from '../bulk-cards';
 import { STATUS_META, cardStatus, deltaPercent, formatDateTime, sortForDisplay } from '../card-status';
 import BulkFiltersDialog from '../components/BulkFiltersDialog.vue';
 import BulkGroupDialog from '../components/BulkGroupDialog.vue';
@@ -141,10 +141,22 @@ async function loadGroups() {
   }
 }
 
-function onBulkDone(result: BulkResult, verb = 'updated') {
+/** `stoppedBy`: the bulk action stopped part way; the cards it did not reach stay selected. */
+function onBulkDone(result: BulkResult, stoppedBy?: string, verb = 'updated') {
   const skipped = result.skipped.length > 0 ? `, ${result.skipped.length} skipped (${result.skipped[0]!.reason})` : '';
-  toast.add({ severity: 'success', summary: `${result.updated.length} cards ${verb}${skipped}`, life: 4000 });
-  selected.value = [];
+  if (stoppedBy) {
+    toast.add({
+      severity: 'warn',
+      summary: `Stopped after ${result.updated.length} cards ${verb}${skipped}`,
+      detail: `${stoppedBy}. The cards not processed are still selected.`,
+      life: 8000,
+    });
+    const processed = new Set([...result.updated, ...result.skipped.map((s) => s.id)]);
+    selected.value = selected.value.filter((c) => !processed.has(c.id));
+  } else {
+    toast.add({ severity: 'success', summary: `${result.updated.length} cards ${verb}${skipped}`, life: 4000 });
+    selected.value = [];
+  }
   void load();
 }
 
@@ -163,11 +175,10 @@ function confirmBulkDelete() {
     rejectProps: { label: 'Cancel', severity: 'secondary', outlined: true },
     accept: async () => {
       try {
-        onBulkDone(await bulkCards(ids, { type: 'delete' }), 'removed');
+        onBulkDone(await bulkCards(ids, { type: 'delete' }), undefined, 'removed');
       } catch (e) {
-        toast.add({ severity: 'error', summary: 'Error', detail: (e as Error).message, life: 5000 });
-        // Earlier chunks may have gone through.
-        void load();
+        if (e instanceof BulkStoppedError) onBulkDone(e.partial, e.message, 'removed');
+        else toast.add({ severity: 'error', summary: 'Error', detail: (e as Error).message, life: 5000 });
       }
     },
   });

@@ -21,6 +21,7 @@ const blueprints: CardBlueprint[] = [{ blueprintId: 100, expansionId: 1, expansi
 const input: ImportResolve = {
   name: 'sol ring',
   setCode: 'c21',
+  setGuessed: false,
   respectSet: false,
   languages: [],
   minCondition: 'Near Mint',
@@ -58,6 +59,17 @@ describe('ImportService.resolve', () => {
   it('respectSet without a set code → any expansion', async () => {
     await service.resolve({ ...input, respectSet: true, setCode: null });
     expect(catalog.resolveBlueprints).toHaveBeenCalledWith(lookup, []);
+  });
+
+  it('unknown guessed set (maybe an Archidekt tag) with respectSet → any expansion', async () => {
+    const result = await service.resolve({ ...input, respectSet: true, setCode: 'etb', setGuessed: true });
+    expect(catalog.resolveBlueprints).toHaveBeenCalledWith(lookup, []);
+    expect(result.expansionIds).toEqual([]);
+  });
+
+  it('known guessed set with respectSet is used', async () => {
+    await service.resolve({ ...input, respectSet: true, setCode: 'cmr', setGuessed: true });
+    expect(catalog.resolveBlueprints).toHaveBeenCalledWith(lookup, [2]);
   });
 
   it('unknown set with respectSet → ValidationError', async () => {

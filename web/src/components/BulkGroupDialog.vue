@@ -7,11 +7,11 @@ import Message from 'primevue/message';
 import Select from 'primevue/select';
 import { computed, ref, watch } from 'vue';
 import { api } from '../api';
-import { bulkCards } from '../bulk-cards';
+import { BulkStoppedError, bulkCards } from '../bulk-cards';
 
 const props = defineProps<{ cards: TrackedCard[]; groups: CardGroup[] }>();
 const visible = defineModel<boolean>('visible', { required: true });
-const emit = defineEmits<{ done: [result: BulkResult]; groupsChanged: [] }>();
+const emit = defineEmits<{ done: [result: BulkResult, stoppedBy?: string]; groupsChanged: [] }>();
 
 /** Explicit option for "remove from any group", so that nothing picked can't be mistaken for it. */
 const NO_GROUP = 'none';
@@ -56,6 +56,12 @@ async function apply() {
     emit('done', result);
     visible.value = false;
   } catch (e) {
+    if (e instanceof BulkStoppedError) {
+      // Part of the cards were changed: the page reloads and keeps the others selected.
+      emit('done', e.partial, e.message);
+      visible.value = false;
+      return;
+    }
     error.value = (e as Error).message;
   } finally {
     saving.value = false;

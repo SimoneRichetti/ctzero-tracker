@@ -23,8 +23,8 @@ export class ImportService {
     if (input.respectSet && input.setCode) {
       const code = input.setCode.toLowerCase();
       const printing = lookup.printings.find((p) => p.code.toLowerCase() === code);
-      if (!printing) throw new ValidationError(`Set "${input.setCode.toUpperCase()}" not found for "${lookup.name}"`);
-      expansionIds = [printing.expansionId];
+      if (printing) expansionIds = [printing.expansionId];
+      else if (!input.setGuessed) throw new ValidationError(`Set "${input.setCode.toUpperCase()}" not found for "${lookup.name}"`);
     }
     const blueprints = await catalog.resolveBlueprints(lookup, expansionIds);
     const result = await priceCard(ct, blueprints, input);

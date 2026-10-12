@@ -52,7 +52,7 @@ describe('parseDecklist', () => {
 
   it('merges duplicates case-insensitively: first occurrence wins, foil is OR-ed', () => {
     const { lines } = parseDecklist('1 Sol Ring (C21)\n1 sol ring (CMR) *F*');
-    expect(lines).toEqual([{ name: 'Sol Ring', setCode: 'c21', foil: true, lineNo: 1 }]);
+    expect(lines).toEqual([{ name: 'Sol Ring', setCode: 'c21', setGuessed: false, foil: true, lineNo: 1 }]);
   });
 
   it('reports lines without a card name with their line number', () => {
@@ -85,30 +85,39 @@ describe('parseDecklist', () => {
 
   it('reads the foil marker when it precedes Archidekt tags', () => {
     const { lines } = parseDecklist('1x Sol Ring (c21) 263 *F* [Ramp] ^Have,#37d67a^');
-    expect(lines).toEqual([{ name: 'Sol Ring', setCode: 'c21', foil: true, lineNo: 1 }]);
+    expect(lines).toEqual([{ name: 'Sol Ring', setCode: 'c21', setGuessed: false, foil: true, lineNo: 1 }]);
   });
 
-  it('strips Archidekt category tags on lines without a set', () => {
-    const { lines } = parseDecklist('1x Lightning Bolt [Burn]\n1x Counterspell [Interaction,Stack] [Blue]');
-    expect(lines.map((l) => [l.name, l.setCode])).toEqual([
-      ['Lightning Bolt', null],
-      ['Counterspell', null],
+  it('on lines without a (SET), strips tags and keeps the first set-shaped one as a guessed set', () => {
+    const { lines } = parseDecklist(
+      '1x Lightning Bolt [Burn]\n1x Counterspell [Interaction,Stack] [Blue]\n1x Wrath of God [AOE]\n1x Opt [Card Draw]',
+    );
+    expect(lines.map((l) => [l.name, l.setCode, l.setGuessed])).toEqual([
+      ['Lightning Bolt', 'burn', true],
+      ['Counterspell', 'blue', true],
+      ['Wrath of God', 'aoe', true],
+      ['Opt', null, false],
     ]);
+  });
+
+  it('reads a lowercase bracket set as a guessed set', () => {
+    const { lines } = parseDecklist('1 Arcane Signet [cmr]');
+    expect(lines).toEqual([{ name: 'Arcane Signet', setCode: 'cmr', setGuessed: true, foil: false, lineNo: 1 }]);
   });
 
   it('reads a lowercase foil marker before Archidekt tags', () => {
     const { lines } = parseDecklist('1x Sol Ring (c21) 263 *f* [Ramp]');
-    expect(lines).toEqual([{ name: 'Sol Ring', setCode: 'c21', foil: true, lineNo: 1 }]);
+    expect(lines).toEqual([{ name: 'Sol Ring', setCode: 'c21', setGuessed: false, foil: true, lineNo: 1 }]);
   });
 
   it('keeps a bracket set followed by Archidekt tags', () => {
     const { lines } = parseDecklist('1 Arcane Signet [CMR] [Ramp]');
-    expect(lines).toEqual([{ name: 'Arcane Signet', setCode: 'cmr', foil: false, lineNo: 1 }]);
+    expect(lines).toEqual([{ name: 'Arcane Signet', setCode: 'cmr', setGuessed: true, foil: false, lineNo: 1 }]);
   });
 
   it('keeps the bracket set format working', () => {
     const { lines } = parseDecklist('1 Arcane Signet [CMR]');
-    expect(lines).toEqual([{ name: 'Arcane Signet', setCode: 'cmr', foil: false, lineNo: 1 }]);
+    expect(lines).toEqual([{ name: 'Arcane Signet', setCode: 'cmr', setGuessed: true, foil: false, lineNo: 1 }]);
   });
 
   it('skips MTGA About and Name header lines at the top', () => {

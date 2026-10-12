@@ -6,12 +6,12 @@ import InputNumber from 'primevue/inputnumber';
 import Message from 'primevue/message';
 import SelectButton from 'primevue/selectbutton';
 import { computed, ref, watch } from 'vue';
-import { bulkCards } from '../bulk-cards';
+import { BulkStoppedError, bulkCards } from '../bulk-cards';
 import { MAX_PERCENT, MIN_PERCENT, THRESHOLD_MODE_OPTIONS, thresholdChoice } from '../threshold-choice';
 
 const props = defineProps<{ cards: TrackedCard[] }>();
 const visible = defineModel<boolean>('visible', { required: true });
-const emit = defineEmits<{ done: [result: BulkResult] }>();
+const emit = defineEmits<{ done: [result: BulkResult, stoppedBy?: string] }>();
 
 const mode = ref<'percent' | 'fixed'>('percent');
 const percent = ref<number | null>(10);
@@ -40,6 +40,12 @@ async function apply() {
     emit('done', result);
     visible.value = false;
   } catch (e) {
+    if (e instanceof BulkStoppedError) {
+      // Part of the cards were changed: the page reloads and keeps the others selected.
+      emit('done', e.partial, e.message);
+      visible.value = false;
+      return;
+    }
     error.value = (e as Error).message;
   } finally {
     saving.value = false;

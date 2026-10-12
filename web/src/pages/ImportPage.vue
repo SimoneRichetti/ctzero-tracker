@@ -137,6 +137,7 @@ async function resolveLines() {
       api.post<ImportResolveResult>('/api/import/resolve', {
         name: line.name,
         setCode: line.setCode,
+        setGuessed: line.setGuessed,
         respectSet: respectSet.value,
         languages: languages.value,
         minCondition: minCondition.value,
@@ -357,7 +358,7 @@ function startOver() {
           <strong>{{ data.result?.name ?? data.line.name }}</strong>
           <div class="muted">
             Line {{ data.line.lineNo }}<template v-if="data.foil"> · Foil</template
-            ><template v-if="data.line.setCode && respectSet"> · {{ data.line.setCode.toUpperCase() }}</template>
+            ><template v-if="data.line.setCode && respectSet && data.result?.expansionIds.length !== 0"> · {{ data.line.setCode.toUpperCase() }}</template>
           </div>
         </template>
       </Column>

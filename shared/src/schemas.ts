@@ -51,6 +51,8 @@ export type BulkCards = z.infer<typeof bulkCardsSchema>;
 
 export const importResolveSchema = cardFiltersSchema.omit({ expansionIds: true }).extend({
   setCode: z.string().trim().min(1).nullable(),
+  /** See DecklistLine.setGuessed: an unknown set falls back to any set instead of failing. */
+  setGuessed: z.boolean().default(false),
   respectSet: z.boolean(),
 });
 export type ImportResolve = z.infer<typeof importResolveSchema>;

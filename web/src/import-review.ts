@@ -72,11 +72,12 @@ export function canInclude(row: ReviewRow): boolean {
 
 /**
  * Entering a valid threshold includes the row; clearing it or going below the minimum excludes it.
+ * Rows of cards already tracked are only included by ticking them, never by editing the threshold.
  * The value is kept as typed, so the input is not wiped by partial values such as 0 on the way to 0.50.
  */
 export function setRowThreshold(row: ReviewRow, cents: number | null): void {
   row.thresholdCents = cents;
-  row.include = canInclude(row);
+  row.include = canInclude(row) && (row.status !== 'tracked' || row.include);
 }
 
 export function rowsToCreate(rows: ReviewRow[]): ReviewRow[] {

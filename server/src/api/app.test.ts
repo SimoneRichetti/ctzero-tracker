@@ -180,7 +180,8 @@ describe('bulk and import API', () => {
     const payload = { name: 'Sol Ring', setCode: 'c21', respectSet: true, languages: [], minCondition: 'Near Mint', foil: false };
     const res = await app.inject({ method: 'POST', url: '/api/import/resolve', payload });
     expect(res.statusCode).toBe(200);
-    expect(importer.resolve).toHaveBeenCalledWith(payload);
+    // setGuessed defaults to false when omitted
+    expect(importer.resolve).toHaveBeenCalledWith({ ...payload, setGuessed: false });
     expect((await app.inject({ method: 'POST', url: '/api/import/resolve', payload: { name: '' } })).statusCode).toBe(400);
   });
 });

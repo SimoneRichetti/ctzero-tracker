@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { bulkInChunks } from './bulk-cards';
+import { BulkStoppedError, bulkInChunks } from './bulk-cards';
 
 describe('bulkInChunks', () => {
   it('splits the ids and merges the results in order', async () => {
@@ -18,9 +18,18 @@ describe('bulkInChunks', () => {
     expect(send).toHaveBeenCalledTimes(1);
   });
 
-  it('stops at the first failed chunk', async () => {
+  it('a failure on the first chunk is rethrown as is', async () => {
+    const error = new Error('boom');
+    const send = vi.fn().mockRejectedValueOnce(error);
+    await expect(bulkInChunks([1, 2, 3], send, 2)).rejects.toBe(error);
+    expect(send).toHaveBeenCalledTimes(1);
+  });
+
+  it('a later failure stops and reports what was applied', async () => {
     const send = vi.fn().mockResolvedValueOnce({ updated: [1, 2], skipped: [] }).mockRejectedValueOnce(new Error('boom'));
-    await expect(bulkInChunks([1, 2, 3, 4, 5], send, 2)).rejects.toThrow('boom');
+    const err = await bulkInChunks([1, 2, 3, 4, 5], send, 2).catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(BulkStoppedError);
+    expect(err).toMatchObject({ message: 'boom', partial: { updated: [1, 2], skipped: [] } });
     expect(send).toHaveBeenCalledTimes(2);
   });
 });

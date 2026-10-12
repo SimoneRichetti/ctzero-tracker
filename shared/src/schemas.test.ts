@@ -161,6 +161,6 @@ describe('importResolveSchema', () => {
       minCondition: 'Near Mint',
       foil: false,
     });
-    expect(parsed).toEqual({ name: 'Sol Ring', setCode: null, respectSet: false, languages: ['en'], minCondition: 'Near Mint', foil: false });
+    expect(parsed).toEqual({ name: 'Sol Ring', setCode: null, setGuessed: false, respectSet: false, languages: ['en'], minCondition: 'Near Mint', foil: false });
   });
 });

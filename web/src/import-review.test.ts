@@ -9,7 +9,7 @@ import {
   setRowThreshold,
 } from './import-review';
 
-const line = (name: string, lineNo: number, foil = false): DecklistLine => ({ name, setCode: null, foil, lineNo });
+const line = (name: string, lineNo: number, foil = false): DecklistLine => ({ name, setCode: null, setGuessed: false, foil, lineNo });
 const result = (over: Partial<ImportResolveResult> = {}): ImportResolveResult => ({
   name: 'Sol Ring',
   imageUrl: null,
@@ -94,6 +94,23 @@ describe('inclusion and threshold edits', () => {
     expect(row).toMatchObject({ thresholdCents: 250, include: true });
     setRowThreshold(row!, null);
     expect(row).toMatchObject({ thresholdCents: null, include: false });
+  });
+
+  it('setRowThreshold does not include a row of a card already tracked, but keeps it if ticked', () => {
+    const l = line('Bolt', 1);
+    const [row] = buildReviewRows(
+      [l],
+      { results: [{ item: l, value: result({ priceCents: 50, alreadyTracked: true }) }], errors: [] },
+      percent,
+      false,
+    );
+    setRowThreshold(row!, 40);
+    expect(row).toMatchObject({ status: 'tracked', thresholdCents: 40, include: false });
+    row!.include = true;
+    setRowThreshold(row!, 30);
+    expect(row).toMatchObject({ thresholdCents: 30, include: true });
+    setRowThreshold(row!, 5);
+    expect(row!.include).toBe(false);
   });
 
   it('setRowThreshold: a threshold below the minimum is kept as typed but excludes the row', () => {

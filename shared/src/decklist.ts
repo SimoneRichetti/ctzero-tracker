@@ -5,6 +5,11 @@ export interface DecklistLine {
   name: string;
   /** Lowercase set code written in the list, if any. */
   setCode: string | null;
+  /**
+   * The set was read from [brackets], which Archidekt also uses for category tags ([ETB], [Ramp]):
+   * if no such set exists for the card, any set is used instead of failing.
+   */
+  setGuessed: boolean;
   foil: boolean;
   /** 1-based line of the first occurrence. */
   lineNo: number;
@@ -24,22 +29,26 @@ const SECTION =
   /^(about|deck|main\s*deck|mainboard|sideboard|commanders?|companions?|maybeboard|considering|tokens?)\s*:?\s*(\(\d+\))?$/i;
 // Archidekt trailing label: ^Have,#37d67a^
 const LABEL = /\s+\^[^^]*\^$/;
-// Archidekt category tag at the end of the line, e.g. [Ramp] or [Ramp,Land]
+// Bracketed group at the end of the line: an Archidekt category tag ([Ramp], [Ramp,Land]) or a [SET]
 const TAG = /\s+\[([^\]]*)\]$/;
-// [SET] is also a set format: only an all-uppercase code, with no (SET) before it, is read as one
-const BRACKET_SET = /^[A-Z0-9]{2,6}$/;
+const SET_SHAPE = /^[A-Za-z0-9]{2,6}$/;
 const PAREN_SET = /\([A-Za-z0-9]{2,6}\)/;
 const FOIL = /\s+\*[FE]\*$/i;
 // [quantity[x]] name [(SET) or [SET] [collector number]]
-const CARD = /^(?:\d+\s*x?\s+)?(.+?)(?:\s+[([]([A-Za-z0-9]{2,6})[)\]](?:\s+\S+)?)?$/;
+const CARD = /^(?:\d+\s*x?\s+)?(.+?)(?:\s+(?:\(([A-Za-z0-9]{2,6})\)|\[([A-Za-z0-9]{2,6})\])(?:\s+\S+)?)?$/;
 
-function stripTags(line: string): string {
+/**
+ * Removes the bracketed groups at the end of the line. Without a (SET) on the line, the first one
+ * shaped like a set code is returned as a possible set: it cannot be told apart from a tag here.
+ */
+function stripTags(line: string): { line: string; bracketSet: string | null } {
+  const groups: string[] = [];
   for (let m = TAG.exec(line); m; m = TAG.exec(line)) {
-    const before = line.slice(0, m.index);
-    if (BRACKET_SET.test(m[1]!) && !PAREN_SET.test(before)) break;
-    line = before;
+    groups.unshift(m[1]!);
+    line = line.slice(0, m.index);
   }
-  return line;
+  const bracketSet = PAREN_SET.test(line) ? null : (groups.find((g) => SET_SHAPE.test(g)) ?? null);
+  return { line, bracketSet };
 }
 
 /**
@@ -59,7 +68,8 @@ export function parseDecklist(text: string): ParsedDecklist {
     // MTGA exports start with "About" and "Name <deck name>" lines
     if (!seenCard && /^name\s/i.test(line)) return;
     line = line.replace(LABEL, '');
-    line = stripTags(line);
+    const stripped = stripTags(line);
+    line = stripped.line;
     const foil = FOIL.test(line);
     if (foil) line = line.replace(FOIL, '');
     const match = CARD.exec(line);
@@ -75,7 +85,9 @@ export function parseDecklist(text: string): ParsedDecklist {
       existing.foil ||= foil;
       return;
     }
-    const entry: DecklistLine = { name, setCode: match?.[2]?.toLowerCase() ?? null, foil, lineNo };
+    const parenSet = match?.[2] ?? null;
+    const setCode = parenSet ?? match?.[3] ?? stripped.bracketSet;
+    const entry: DecklistLine = { name, setCode: setCode?.toLowerCase() ?? null, setGuessed: !parenSet && setCode !== null, foil, lineNo };
     byName.set(key, entry);
     lines.push(entry);
   });
