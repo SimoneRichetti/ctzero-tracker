@@ -18,16 +18,26 @@ const names = ref<Record<number, string>>({});
 const error = ref<string | null>(null);
 const busy = ref(false);
 
+function resetNames() {
+  names.value = Object.fromEntries(props.groups.map((g) => [g.id, g.name]));
+}
+
+// After a reload, keep what the user is typing in the other rows: only new groups and
+// groups whose saved name changed take the name from the server.
 watch(
   () => props.groups,
-  (groups) => {
-    names.value = Object.fromEntries(groups.map((g) => [g.id, g.name]));
+  (groups, previous) => {
+    const before = new Map((previous ?? []).map((g) => [g.id, g.name]));
+    names.value = Object.fromEntries(
+      groups.map((g) => [g.id, before.get(g.id) === g.name ? (names.value[g.id] ?? g.name) : g.name]),
+    );
   },
   { immediate: true },
 );
 
 watch(visible, (open) => {
   if (open) {
+    resetNames();
     newName.value = '';
     error.value = null;
   }

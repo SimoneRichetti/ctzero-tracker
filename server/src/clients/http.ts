@@ -69,6 +69,7 @@ export async function requestJson<T>(url: string, opts: RequestOptions = {}): Pr
       continue;
     }
     const text = await res.text().catch(() => '');
+    if (res.status === 429) throw new RateLimitError(`Rate limit reached on ${host}: wait a minute and try again`);
     throw new HttpError(res.status, `HTTP ${res.status} from ${host}${text ? `: ${text.slice(0, 200)}` : ''}`);
   }
 }

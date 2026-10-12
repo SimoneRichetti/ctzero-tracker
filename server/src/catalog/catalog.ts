@@ -6,6 +6,7 @@ import { NotFoundError, ValidationError } from '../errors';
 
 const EXPANSIONS_TTL_MS = 24 * 3600 * 1000;
 const BLUEPRINTS_TTL_MS = 3600 * 1000;
+const LOOKUPS_TTL_MS = 3600 * 1000;
 
 /** Only the fields needed to match blueprints to Scryfall printings. */
 type SlimBlueprint = Pick<CtBlueprint, 'id' | 'scryfall_id'>;
@@ -23,6 +24,8 @@ export interface CardLookup {
 export class Catalog {
   private expansionsCache: { fetchedAt: number; list: CtExpansion[] } | null = null;
   private readonly blueprintsCache = new Map<number, { fetchedAt: number; list: SlimBlueprint[] }>();
+  /** By lowercased name, both as asked and canonical. */
+  private readonly lookupsCache = new Map<string, { fetchedAt: number; lookup: CardLookup }>();
 
   constructor(
     private readonly ct: CardTraderClient,
@@ -57,7 +60,23 @@ export class Catalog {
     }
   }
 
+  /**
+   * Cached for an hour, under the name asked and the canonical one: an import resolves a line and then
+   * creates the card by its canonical name, and Scryfall lookups are the slowest calls (2 per second).
+   */
   async lookup(name: string): Promise<CardLookup> {
+    const key = name.trim().toLowerCase();
+    const cached = this.lookupsCache.get(key);
+    if (cached && this.now() - cached.fetchedAt < LOOKUPS_TTL_MS) return cached.lookup;
+    const lookup = await this.fetchLookup(name);
+    const now = this.now();
+    for (const [k, v] of this.lookupsCache) if (now - v.fetchedAt >= LOOKUPS_TTL_MS) this.lookupsCache.delete(k);
+    this.lookupsCache.set(key, { fetchedAt: now, lookup });
+    this.lookupsCache.set(lookup.name.toLowerCase(), { fetchedAt: now, lookup });
+    return lookup;
+  }
+
+  private async fetchLookup(name: string): Promise<CardLookup> {
     const card = await this.named(name);
     const prints = await this.scryfall.prints(card.oracle_id);
     const byCode = new Map((await this.mtgExpansions()).map((e) => [e.code.toLowerCase(), e]));

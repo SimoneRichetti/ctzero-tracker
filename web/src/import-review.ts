@@ -8,8 +8,7 @@ import {
   type Language,
 } from '@ctzero/shared';
 import type { BatchOutcome } from './batch-runner';
-
-export type ThresholdDefault = { mode: 'percent'; percent: number } | { mode: 'fixed'; cents: number };
+import type { ThresholdChoice } from './threshold-choice';
 
 export type RowStatus = 'ok' | 'tracked' | 'no_offers' | 'not_found' | 'error';
 
@@ -24,7 +23,7 @@ export interface ReviewRow {
   thresholdCents: number | null;
 }
 
-export function proposeThreshold(priceCents: number | null, def: ThresholdDefault): number | null {
+export function proposeThreshold(priceCents: number | null, def: ThresholdChoice): number | null {
   if (def.mode === 'fixed') return def.cents;
   return priceCents === null ? null : percentBelow(priceCents, def.percent);
 }
@@ -36,7 +35,7 @@ export function proposeThreshold(priceCents: number | null, def: ThresholdDefaul
 export function buildReviewRows(
   lines: DecklistLine[],
   outcome: Pick<BatchOutcome<DecklistLine, ImportResolveResult>, 'results' | 'errors'>,
-  def: ThresholdDefault,
+  def: ThresholdChoice,
   defaultFoil: boolean,
 ): ReviewRow[] {
   const results = new Map(outcome.results.map((r) => [r.item, r.value]));

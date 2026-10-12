@@ -32,6 +32,14 @@ describe('requestJson', () => {
     expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 
+  it('a 429 still there after the retries becomes a RateLimitError', async () => {
+    fetchMock.mockImplementation(async () => json({}, 429));
+    const err = await requestJson('https://x.test/a', { retryDelayMs: 1 }).catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(RateLimitError);
+    expect((err as RateLimitError).message).toBe('Rate limit reached on x.test: wait a minute and try again');
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+  });
+
   it('throws HttpError after retries on 500', async () => {
     fetchMock.mockImplementation(async () => json({ e: 1 }, 500));
     const err = await requestJson('https://x.test/a', { retryDelayMs: 1 }).catch((e: unknown) => e);

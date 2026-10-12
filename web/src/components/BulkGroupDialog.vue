@@ -5,22 +5,25 @@ import Dialog from 'primevue/dialog';
 import InputText from 'primevue/inputtext';
 import Message from 'primevue/message';
 import Select from 'primevue/select';
-import { ref, watch } from 'vue';
+import { computed, ref, watch } from 'vue';
 import { api } from '../api';
 
 const props = defineProps<{ cards: TrackedCard[]; groups: CardGroup[] }>();
 const visible = defineModel<boolean>('visible', { required: true });
 const emit = defineEmits<{ done: [result: BulkResult]; groupsChanged: [] }>();
 
-/** null = remove from any group. */
-const groupId = ref<number | null>(null);
+/** Explicit option for "remove from any group", so that nothing picked can't be mistaken for it. */
+const NO_GROUP = 'none';
+/** null = nothing picked yet. */
+const choice = ref<number | typeof NO_GROUP | null>(null);
+const options = computed(() => [{ id: NO_GROUP, name: 'No group (remove from group)' }, ...props.groups]);
 const newName = ref('');
 const error = ref<string | null>(null);
 const saving = ref(false);
 
 watch(visible, (open) => {
   if (open) {
-    groupId.value = null;
+    choice.value = null;
     newName.value = '';
     error.value = null;
   }
@@ -33,7 +36,7 @@ async function createGroup() {
   try {
     const group = await api.post<CardGroup>('/api/groups', { name });
     newName.value = '';
-    groupId.value = group.id;
+    choice.value = group.id;
     emit('groupsChanged');
   } catch (e) {
     error.value = (e as Error).message;
@@ -41,12 +44,13 @@ async function createGroup() {
 }
 
 async function apply() {
+  if (choice.value === null) return;
   saving.value = true;
   error.value = null;
   try {
     const result = await api.post<BulkResult>('/api/cards/bulk', {
       ids: props.cards.map((c) => c.id),
-      action: { type: 'group', groupId: groupId.value },
+      action: { type: 'group', groupId: choice.value === NO_GROUP ? null : choice.value },
     });
     emit('done', result);
     visible.value = false;
@@ -64,12 +68,12 @@ async function apply() {
     <div class="field">
       <label for="bulk-group">Group</label>
       <Select
-        v-model="groupId"
+        v-model="choice"
         input-id="bulk-group"
-        :options="groups"
+        :options="options"
         option-label="name"
         option-value="id"
-        placeholder="No group (remove from group)"
+        placeholder="Choose a group"
         show-clear
         fluid
       />
@@ -84,7 +88,7 @@ async function apply() {
     <Message v-if="error" severity="error">{{ error }}</Message>
     <template #footer>
       <Button label="Cancel" severity="secondary" text @click="visible = false" />
-      <Button label="Move" icon="pi pi-check" :loading="saving" @click="apply" />
+      <Button label="Move" icon="pi pi-check" :disabled="choice === null" :loading="saving" @click="apply" />
     </template>
   </Dialog>
 </template>

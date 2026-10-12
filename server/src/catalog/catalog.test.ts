@@ -67,6 +67,23 @@ describe('Catalog.lookup', () => {
     expect(ct.expansions).toHaveBeenCalledTimes(2);
   });
 
+  it('caches lookups for 1 hour, by the name asked and the canonical one', async () => {
+    await catalog.lookup('ragavan');
+    await catalog.lookup('Ragavan ');
+    await catalog.lookup('Ragavan, Nimble Pilferer');
+    expect(scryfall.named).toHaveBeenCalledTimes(1);
+    expect(scryfall.prints).toHaveBeenCalledTimes(1);
+    clock = 61 * 60 * 1000;
+    await catalog.lookup('Ragavan, Nimble Pilferer');
+    expect(scryfall.named).toHaveBeenCalledTimes(2);
+  });
+
+  it('does not cache a card not found', async () => {
+    scryfall.named.mockRejectedValueOnce(new HttpError(404, 'HTTP 404 from api.scryfall.com'));
+    await expect(catalog.lookup('ragavan')).rejects.toBeInstanceOf(NotFoundError);
+    await expect(catalog.lookup('ragavan')).resolves.toMatchObject({ oracleId: 'o1' });
+  });
+
   it('with a maximum age, refetches expansions older than that', async () => {
     await catalog.mtgExpansions();
     clock = 5 * 60 * 1000;

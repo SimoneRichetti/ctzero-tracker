@@ -40,18 +40,14 @@ import {
   setRowThreshold,
   type ReviewRow,
   type RowStatus,
-  type ThresholdDefault,
 } from '../import-review';
+import { MAX_PERCENT, MIN_PERCENT, THRESHOLD_MODE_OPTIONS, thresholdChoice } from '../threshold-choice';
 
 type Step = 'input' | 'resolving' | 'review' | 'creating' | 'done';
 
 const toast = useToast();
 const conditionOptions = [...CONDITIONS];
 const languageOptions = LANGUAGES.map((code) => ({ code, label: LANGUAGE_LABELS[code] }));
-const thresholdModeOptions = [
-  { label: '% below current price', value: 'percent' },
-  { label: 'Fixed amount', value: 'fixed' },
-];
 const groupModeOptions = [
   { label: 'New group', value: 'new' },
   { label: 'Existing group', value: 'existing' },
@@ -92,12 +88,7 @@ let controller: AbortController | null = null;
 
 const parsed = computed(() => parseDecklist(text.value));
 const tooMany = computed(() => parsed.value.lines.length > MAX_IMPORT_CARDS);
-const thresholdDefault = computed<ThresholdDefault | null>(() => {
-  if (thresholdMode.value === 'percent') {
-    return percent.value !== null && percent.value >= 1 && percent.value <= 90 ? { mode: 'percent', percent: percent.value } : null;
-  }
-  return fixedEuro.value !== null && euroToCents(fixedEuro.value) >= MIN_THRESHOLD_CENTS ? { mode: 'fixed', cents: euroToCents(fixedEuro.value) } : null;
-});
+const thresholdDefault = computed(() => thresholdChoice(thresholdMode.value, percent.value, fixedEuro.value));
 const groupError = computed(() => {
   if (groupMode.value === 'new') {
     const name = newGroupName.value.trim();
@@ -112,13 +103,15 @@ const canResolve = computed(
 );
 const toCreate = computed(() => rowsToCreate(rows.value));
 
-onMounted(async () => {
+async function loadGroups() {
   try {
     groups.value = await api.get<CardGroup[]>('/api/groups');
   } catch (e) {
     toast.add({ severity: 'error', summary: 'Error', detail: (e as Error).message, life: 5000 });
   }
-});
+}
+
+onMounted(loadGroups);
 
 const pausedSeconds = ref<number | null>(null);
 
@@ -217,6 +210,8 @@ function startOver() {
   result.value = null;
   newGroupName.value = '';
   step.value = 'input';
+  // The import may have created a group: the name check and the 'Existing group' list need it.
+  void loadGroups();
 }
 </script>
 
@@ -281,12 +276,12 @@ function startOver() {
           <label>Default threshold</label>
           <SelectButton
             v-model="thresholdMode"
-            :options="thresholdModeOptions"
+            :options="THRESHOLD_MODE_OPTIONS"
             option-label="label"
             option-value="value"
             :allow-empty="false"
           />
-          <InputNumber v-if="thresholdMode === 'percent'" v-model="percent" suffix=" %" :min="1" :max="90" aria-label="Percent" />
+          <InputNumber v-if="thresholdMode === 'percent'" v-model="percent" suffix=" %" :min="MIN_PERCENT" :max="MAX_PERCENT" aria-label="Percent" />
           <InputNumber
             v-else
             v-model="fixedEuro"
