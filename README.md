@@ -18,6 +18,9 @@ Tracks the minimum **CardTrader Zero** price of Magic cards and sealed products 
 - `npm start` → builds the UI and starts everything on http://localhost:3000
 - The scheduler only runs while the process is up. On startup, if an update was missed, one starts after about 30 seconds.
 - The schedule and the "further drop" percentage can be changed from the **Settings** page.
+- Thresholds can't go below €0.11 (percent-based ones and suggested presets are raised to that minimum).
+- **Groups**: on the Cards page, "Manage groups" creates, renames and deletes groups (deleting a group keeps its cards). Pick a group from the selector to see only its cards with totals; tick cards to change threshold, filters or group, or delete them, all at once.
+- **Import list**: "Import list" on the Cards page accepts a pasted decklist (Moxfield, Archidekt, MTG Arena or one name per line, up to 250 cards). Prices are checked one card at a time, then you review thresholds and add the cards to a new group, an existing one or no group. Keep the tab open while it runs.
 
 ## Docker
 - `docker compose up -d --build` → builds the image and starts the container on http://localhost:3000
@@ -38,6 +41,8 @@ Everything lives in `data/ctzero.db` (SQLite). To start from scratch, just delet
 - CardTrader only returns the 25 cheapest listings per printing: if they are all non-Zero or in worse condition than the minimum, the card shows "No offers" even if valid, more expensive offers exist.
 - Shipping costs are not taken into account.
 - Sealed products: only listings still sealed are considered (opened Secret Lairs are ignored). Adding a product from a CardTrader link requires the product to have at least one listing; otherwise select it from its expansion.
+- Bulk filter changes and imports run from the browser one card at a time: closing the tab stops them (what was done stays done).
+- Card lookups go through Scryfall, which allows about 2 lookups per second: long imports are slow, and if Scryfall asks to slow down the import pauses for a minute and then resumes on its own.
 
 ## License
 MIT — see [LICENSE](LICENSE).

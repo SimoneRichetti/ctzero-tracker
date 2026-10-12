@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { RateLimitError } from './http';
 import { ScryfallClient, cardImage, type ScryfallCard } from './scryfall';
 
 const fetchMock = vi.fn();
@@ -44,6 +45,33 @@ describe('ScryfallClient', () => {
     expect(firstUrl).toContain('q=oracleid%3Aabc');
     expect(firstUrl).toContain('unique=prints');
     expect(fetchMock.mock.calls[1]![0]).toBe('https://api.scryfall.com/cards/search?page=2');
+  });
+
+  it('a 429 is not retried and becomes a RateLimitError with a readable message', async () => {
+    fetchMock.mockImplementation(async () => new Response('{"code":"rate_limited"}', { status: 429 }));
+    const err = await client.named('Sol Ring').catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(RateLimitError);
+    expect((err as RateLimitError).message).toBe('Scryfall rate limit reached: wait 30 seconds and try again');
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('named and search share a budget of 2 requests per second; other endpoints do not wait for it', async () => {
+    vi.useFakeTimers();
+    try {
+      const throttled = new ScryfallClient({ throttleMs: 0, retryDelayMs: 1 });
+      fetchMock.mockImplementation(async () => json({ ...card('1', 'x'), data: [], has_more: false }));
+      await throttled.named('A');
+      const search = throttled.prints('abc');
+      await vi.advanceTimersByTimeAsync(499);
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+      await vi.advanceTimersByTimeAsync(1);
+      await search;
+      expect(fetchMock).toHaveBeenCalledTimes(2);
+      await throttled.autocomplete('sol');
+      expect(fetchMock).toHaveBeenCalledTimes(3);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('cardImage uses the first face for double-faced cards', () => {

@@ -2,6 +2,7 @@
 import {
   LANGUAGES,
   LANGUAGE_LABELS,
+  MIN_THRESHOLD_CENTS,
   euroToCents,
   formatEuro,
   type Expansion,
@@ -54,7 +55,7 @@ const modeOptions = [
   { label: 'From link', value: 'link' },
 ];
 const languageOptions = LANGUAGES.map((code) => ({ code, label: LANGUAGE_LABELS[code] }));
-const canSave = computed(() => product.value !== null && thresholdEuro.value !== null && thresholdEuro.value > 0);
+const canSave = computed(() => product.value !== null && thresholdEuro.value !== null && euroToCents(thresholdEuro.value) >= MIN_THRESHOLD_CENTS);
 
 watch(visible, (open) => {
   if (open) void reset();
@@ -309,7 +310,7 @@ async function save() {
           mode="currency"
           currency="EUR"
           locale="en-US"
-          :min="0.01"
+          :min="MIN_THRESHOLD_CENTS / 100"
         />
       </div>
     </div>

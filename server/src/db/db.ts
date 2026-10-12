@@ -92,6 +92,15 @@ export const MIGRATIONS: string[] = [
   );
   CREATE INDEX sealed_price_snapshots_sealed ON sealed_price_snapshots(tracked_sealed_id);
   `,
+  `
+  CREATE TABLE card_groups (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT NOT NULL UNIQUE COLLATE NOCASE,
+    created_at TEXT NOT NULL
+  );
+  ALTER TABLE tracked_cards ADD COLUMN group_id INTEGER REFERENCES card_groups(id) ON DELETE SET NULL;
+  CREATE INDEX tracked_cards_group ON tracked_cards(group_id);
+  `,
 ];
 
 export function openDb(path: string): Db {

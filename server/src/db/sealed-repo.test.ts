@@ -111,21 +111,16 @@ describe('migration 2', () => {
     const v1 = new DatabaseSync(path);
     v1.exec(MIGRATIONS[0]!);
     v1.exec('PRAGMA user_version = 1');
-    insertCard(v1, {
-      name: 'Lightning Bolt',
-      scryfallOracleId: 'o',
-      imageUrl: null,
-      expansionIds: [],
-      languages: [],
-      minCondition: 'Near Mint',
-      foil: false,
-      thresholdCents: 100,
-    });
+    // Raw insert: the current insertCard targets the latest schema (group_id), not v1.
+    v1.prepare(
+      `INSERT INTO tracked_cards (name, scryfall_oracle_id, min_condition, foil, threshold_cents, created_at, updated_at)
+       VALUES ('Lightning Bolt', 'o', 'Near Mint', 0, 100, '2026-10-02T10:00:00.000Z', '2026-10-02T10:00:00.000Z')`,
+    ).run();
     v1.close();
 
     const db2 = openDb(path);
     const { user_version } = db2.prepare('PRAGMA user_version').get() as { user_version: number };
-    expect(user_version).toBe(2);
+    expect(user_version).toBe(MIGRATIONS.length);
     expect(listCards(db2).map((c) => c.name)).toEqual(['Lightning Bolt']);
     expect(listSealed(db2)).toEqual([]);
     db2.close();

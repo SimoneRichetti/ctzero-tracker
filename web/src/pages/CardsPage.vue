@@ -1,16 +1,23 @@
 <script setup lang="ts">
-import { CONDITION_ABBR, LANGUAGE_LABELS, formatEuro, type TrackedCard } from '@ctzero/shared';
+import { CONDITION_ABBR, LANGUAGE_LABELS, formatEuro, type BulkResult, type CardGroup, type TrackedCard } from '@ctzero/shared';
 import Button from 'primevue/button';
 import Column from 'primevue/column';
 import DataTable from 'primevue/datatable';
+import Select from 'primevue/select';
 import Tag from 'primevue/tag';
 import { useConfirm } from 'primevue/useconfirm';
 import { useToast } from 'primevue/usetoast';
-import { computed, onMounted, ref } from 'vue';
+import { computed, onMounted, ref, watch } from 'vue';
+import { useRoute, useRouter } from 'vue-router';
 import { api } from '../api';
 import { STATUS_META, cardStatus, deltaPercent, formatDateTime, sortForDisplay } from '../card-status';
+import BulkFiltersDialog from '../components/BulkFiltersDialog.vue';
+import BulkGroupDialog from '../components/BulkGroupDialog.vue';
+import BulkThresholdDialog from '../components/BulkThresholdDialog.vue';
 import CardDialog from '../components/CardDialog.vue';
+import GroupsDialog from '../components/GroupsDialog.vue';
 import SyncHeader from '../components/SyncHeader.vue';
+import { filterByGroup, groupFilterQuery, parseGroupFilter, summarize, type GroupFilter } from '../group-summary';
 
 const toast = useToast();
 const confirm = useConfirm();
@@ -18,7 +25,25 @@ const cards = ref<TrackedCard[]>([]);
 const loading = ref(false);
 const dialogVisible = ref(false);
 const editing = ref<TrackedCard | null>(null);
-const rows = computed(() => sortForDisplay(cards.value));
+const route = useRoute();
+const router = useRouter();
+const groups = ref<CardGroup[]>([]);
+const groupsDialogVisible = ref(false);
+
+const groupFilter = computed(() => parseGroupFilter(route.query.group, groups.value.map((g) => g.id)));
+const groupOptions = computed(() => [
+  { label: 'All cards', value: 'all' as GroupFilter },
+  { label: 'No group', value: 'none' as GroupFilter },
+  ...groups.value.map((g) => ({ label: `${g.name} (${g.cardCount})`, value: g.id as GroupFilter })),
+]);
+const groupNames = computed(() => new Map(groups.value.map((g) => [g.id, g.name])));
+const rows = computed(() => sortForDisplay(filterByGroup(cards.value, groupFilter.value)));
+const summary = computed(() => summarize(rows.value));
+const defaultGroupId = computed(() => (typeof groupFilter.value === 'number' ? groupFilter.value : null));
+
+function setGroupFilter(value: GroupFilter) {
+  void router.replace({ query: { ...route.query, group: groupFilterQuery(value) } });
+}
 
 const PREVIEW_WIDTH = 244;
 const PREVIEW_HEIGHT = Math.round(PREVIEW_WIDTH * (680 / 488));
@@ -47,7 +72,12 @@ function hidePreview() {
 async function load() {
   loading.value = true;
   try {
-    cards.value = await api.get<TrackedCard[]>('/api/cards');
+    [cards.value, groups.value] = await Promise.all([
+      api.get<TrackedCard[]>('/api/cards'),
+      api.get<CardGroup[]>('/api/groups'),
+    ]);
+    // Re-derive the selection from fresh data: drops deleted cards and avoids stale snapshots.
+    selected.value = cards.value.filter((c) => selected.value.some((s) => s.id === c.id));
   } catch (e) {
     toast.add({ severity: 'error', summary: 'Error', detail: (e as Error).message, life: 5000 });
   } finally {
@@ -88,8 +118,62 @@ function confirmDelete(card: TrackedCard) {
   });
 }
 
+const selected = ref<TrackedCard[]>([]);
+const bulkDialog = ref<'threshold' | 'group' | 'filters' | null>(null);
+const bulkVisible = (kind: 'threshold' | 'group' | 'filters') =>
+  computed({
+    get: () => bulkDialog.value === kind,
+    set: (open: boolean) => (bulkDialog.value = open ? kind : null),
+  });
+const thresholdVisible = bulkVisible('threshold');
+const groupVisible = bulkVisible('group');
+const filtersVisible = bulkVisible('filters');
+
+// The selection only makes sense within the group being shown.
+watch(groupFilter, () => (selected.value = []));
+
+async function loadGroups() {
+  try {
+    groups.value = await api.get<CardGroup[]>('/api/groups');
+  } catch (e) {
+    toast.add({ severity: 'error', summary: 'Error', detail: (e as Error).message, life: 5000 });
+  }
+}
+
+function onBulkDone(result: BulkResult, verb = 'updated') {
+  const skipped = result.skipped.length > 0 ? `, ${result.skipped.length} skipped (${result.skipped[0]!.reason})` : '';
+  toast.add({ severity: 'success', summary: `${result.updated.length} cards ${verb}${skipped}`, life: 4000 });
+  selected.value = [];
+  void load();
+}
+
+function onFiltersDone() {
+  selected.value = [];
+  void load();
+}
+
+function confirmBulkDelete() {
+  const ids = selected.value.map((c) => c.id);
+  confirm.require({
+    message: `Stop tracking ${ids.length} cards?`,
+    header: 'Confirm',
+    icon: 'pi pi-exclamation-triangle',
+    acceptProps: { label: 'Delete', severity: 'danger' },
+    rejectProps: { label: 'Cancel', severity: 'secondary', outlined: true },
+    accept: async () => {
+      try {
+        onBulkDone(await api.post<BulkResult>('/api/cards/bulk', { ids, action: { type: 'delete' } }), 'removed');
+      } catch (e) {
+        toast.add({ severity: 'error', summary: 'Error', detail: (e as Error).message, life: 5000 });
+      }
+    },
+  });
+}
+
 function filterChips(card: TrackedCard): string[] {
+  const group = groupFilter.value === 'all' && card.groupId !== null ? groupNames.value.get(card.groupId) : undefined;
   return [
+    ...(group ? [`📁 ${group}`] : []),
     card.expansionNames.length > 0 ? card.expansionNames.join(', ') : 'Any expansion',
     card.languages.length > 0 ? card.languages.map((l) => LANGUAGE_LABELS[l]).join(', ') : 'Any language',
     `≥ ${CONDITION_ABBR[card.minCondition]}`,
@@ -109,13 +193,53 @@ onMounted(load);
 <template>
   <div class="page-header">
     <h1>Tracked cards</h1>
-    <Button label="Add card" icon="pi pi-plus" @click="openNew" />
+    <div class="header-actions">
+      <Button label="Import list" icon="pi pi-upload" severity="secondary" outlined @click="router.push('/import')" />
+      <Button label="Add card" icon="pi pi-plus" @click="openNew" />
+    </div>
   </div>
 
   <SyncHeader @finished="load" />
 
-  <DataTable :value="rows" :loading="loading" data-key="id" striped-rows>
-    <template #empty>No tracked cards. Add one with "Add card".</template>
+  <div class="group-toolbar">
+    <Select
+      :model-value="groupFilter"
+      :options="groupOptions"
+      option-label="label"
+      option-value="value"
+      aria-label="Group"
+      class="group-select"
+      @update:model-value="setGroupFilter"
+    />
+    <Button label="Manage groups" icon="pi pi-folder" severity="secondary" text @click="groupsDialogVisible = true" />
+  </div>
+
+  <div class="summary">
+    <span><strong>{{ summary.count }}</strong> cards</span>
+    <span><strong>{{ summary.below }}</strong> below threshold</span>
+    <span v-if="summary.problems > 0"><strong>{{ summary.problems }}</strong> no offers / error</span>
+    <span>
+      Current total <strong>{{ formatEuro(summary.totalPriceCents) }}</strong>
+      <span v-if="summary.missingPrice > 0" class="muted">({{ summary.missingPrice }} without price)</span>
+    </span>
+    <span>Threshold total <strong>{{ formatEuro(summary.totalThresholdCents) }}</strong></span>
+  </div>
+
+  <div v-if="selected.length > 0" class="bulk-bar">
+    <strong>{{ selected.length }} selected</strong>
+    <Button label="Threshold…" icon="pi pi-euro" size="small" outlined @click="bulkDialog = 'threshold'" />
+    <Button label="Filters…" icon="pi pi-filter" size="small" outlined @click="bulkDialog = 'filters'" />
+    <Button label="Move to group…" icon="pi pi-folder" size="small" outlined @click="bulkDialog = 'group'" />
+    <Button label="Delete" icon="pi pi-trash" size="small" severity="danger" outlined @click="confirmBulkDelete" />
+    <Button label="Clear selection" size="small" text @click="selected = []" />
+  </div>
+
+  <DataTable v-model:selection="selected" :value="rows" :loading="loading" data-key="id" striped-rows>
+    <template #empty>
+      <template v-if="groupFilter !== 'all'">No cards in this group.</template>
+      <template v-else>No tracked cards. Add one with "Add card".</template>
+    </template>
+    <Column selection-mode="multiple" header-style="width: 3rem" />
     <Column header="" style="width: 64px">
       <template #body="{ data }">
         <img
@@ -188,7 +312,24 @@ onMounted(load);
     </Column>
   </DataTable>
 
-  <CardDialog v-model:visible="dialogVisible" :card="editing" @saved="onSaved" />
+  <CardDialog
+    v-model:visible="dialogVisible"
+    :card="editing"
+    :groups="groups"
+    :default-group-id="defaultGroupId"
+    @saved="onSaved"
+  />
+  <GroupsDialog v-model:visible="groupsDialogVisible" :groups="groups" @changed="load" />
+
+  <BulkThresholdDialog v-model:visible="thresholdVisible" :cards="selected" @done="onBulkDone" />
+  <BulkGroupDialog
+    v-model:visible="groupVisible"
+    :cards="selected"
+    :groups="groups"
+    @done="onBulkDone"
+    @groups-changed="loadGroups"
+  />
+  <BulkFiltersDialog v-model:visible="filtersVisible" :cards="selected" @done="onFiltersDone" />
 
   <Teleport to="body">
     <img
@@ -202,10 +343,40 @@ onMounted(load);
 </template>
 
 <style scoped>
+.bulk-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.5rem 0.75rem;
+  margin-bottom: 0.75rem;
+  background: #ecfdf5;
+  border: 1px solid #a7f3d0;
+  border-radius: 8px;
+}
 .page-header {
   display: flex;
   justify-content: space-between;
   align-items: center;
+}
+.header-actions {
+  display: flex;
+  gap: 0.5rem;
+}
+.group-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 0.75rem;
+}
+.group-select {
+  min-width: 16rem;
+}
+.summary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem 1.5rem;
+  margin-bottom: 1rem;
 }
 .row-actions {
   display: flex;

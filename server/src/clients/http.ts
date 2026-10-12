@@ -9,7 +9,18 @@ export class HttpError extends Error {
   }
 }
 
-/** Errors that make continuing the run pointless (missing or invalid token). */
+/** A service asked us to slow down: calling it again right away only extends the block. */
+export class RateLimitError extends HttpError {
+  constructor(message: string) {
+    super(429, message);
+    this.name = 'RateLimitError';
+  }
+}
+
+/**
+ * Errors that make continuing the run pointless (missing or invalid token).
+ * A rate limit is not: it only hits the item being processed, and the sync falls back where it can.
+ */
 export function isFatalHttpError(e: unknown): boolean {
   return e instanceof HttpError && (e.status === 401 || e.status === 403);
 }
@@ -22,6 +33,8 @@ export interface RequestOptions {
   body?: unknown;
   retries?: number;
   retryDelayMs?: number;
+  /** Retry on 429 (default true). */
+  retryRateLimited?: boolean;
 }
 
 export async function requestJson<T>(url: string, opts: RequestOptions = {}): Promise<T> {
@@ -51,7 +64,7 @@ export async function requestJson<T>(url: string, opts: RequestOptions = {}): Pr
       throw new HttpError(0, `Network error contacting ${host}: ${(e as Error).message}`);
     }
     if (res.ok) return (await res.json()) as T;
-    if ((res.status === 429 || res.status >= 500) && attempt < retries) {
+    if (((res.status === 429 && opts.retryRateLimited !== false) || res.status >= 500) && attempt < retries) {
       await sleep(baseDelay * 2 ** attempt);
       continue;
     }

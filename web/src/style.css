@@ -78,3 +78,11 @@ body {
   flex-wrap: wrap;
   gap: 0.25rem;
 }
+
+.error-list {
+  margin: 0.5rem 0 0;
+  padding-left: 1.25rem;
+  max-height: 14rem;
+  overflow-y: auto;
+  font-size: 0.875rem;
+}

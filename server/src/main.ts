@@ -9,6 +9,7 @@ import { ScryfallClient } from './clients/scryfall';
 import { TelegramClient } from './clients/telegram';
 import { openDb } from './db/db';
 import { failOrphanRuns } from './db/runs-repo';
+import { ImportService } from './import/import-service';
 import { Scheduler } from './scheduler/scheduler';
 import { SealedService } from './sealed/sealed-service';
 import { SyncService } from './sync/sync-service';
@@ -27,6 +28,7 @@ const scryfall = new ScryfallClient();
 const telegram = new TelegramClient(process.env.TELEGRAM_BOT_TOKEN ?? '', process.env.TELEGRAM_CHAT_ID ?? '');
 const catalog = new Catalog(ct, scryfall);
 const cards = new CardService({ db, catalog, ct });
+const importer = new ImportService({ db, catalog, ct });
 const sealedCatalog = new SealedCatalog(ct, (maxAgeMs) => catalog.mtgExpansions(maxAgeMs));
 const sealed = new SealedService({ db, catalog: sealedCatalog, ct });
 const sync = new SyncService({ db, catalog, ct, telegram });
@@ -35,6 +37,7 @@ const scheduler = new Scheduler({ db, sync });
 const app = buildApp({
   db,
   cards,
+  importer,
   sealed,
   sealedCatalog,
   sync,

@@ -1,6 +1,6 @@
 import { DEFAULT_SETTINGS } from '@ctzero/shared';
 import { describe, expect, it, vi } from 'vitest';
-import { HttpError } from '../clients/http';
+import { HttpError, RateLimitError } from '../clients/http';
 import { openDb } from '../db/db';
 import { getSettings } from '../db/settings-repo';
 import { NotFoundError, ValidationError } from '../errors';
@@ -14,6 +14,17 @@ function setup() {
     update: vi.fn(async (id: number, input: object) => ({ id, ...input })),
     delete: vi.fn(),
     preview: vi.fn(async () => ({ priceCents: 1000, listing: null, presets: [], blueprintCount: 1 })),
+    bulk: vi.fn(() => ({ updated: [1], skipped: [] })),
+  };
+  const importer = {
+    resolve: vi.fn(async () => ({
+      name: 'Sol Ring',
+      imageUrl: null,
+      expansionIds: [],
+      priceCents: 250,
+      listing: null,
+      alreadyTracked: false,
+    })),
   };
   const sync = { start: vi.fn(() => ({ started: true, run: { id: 7 } })) };
   const scheduler = { getNextRunAt: vi.fn(() => new Date('2026-10-02T12:00:00.000Z')), reschedule: vi.fn() };
@@ -48,7 +59,7 @@ function setup() {
     sealedProducts: vi.fn(async () => [product]),
     sealedProduct: vi.fn(async () => product),
   };
-  const deps = { db, cards, sealed, sealedCatalog, sync, scheduler, catalog, scryfall, telegram, cardtraderConfigured: false };
+  const deps = { db, cards, importer, sealed, sealedCatalog, sync, scheduler, catalog, scryfall, telegram, cardtraderConfigured: false };
   return { app: buildApp(deps as unknown as AppDeps), ...deps };
 }
 
@@ -108,15 +119,69 @@ describe('cards API', () => {
     expect(cards.delete).toHaveBeenCalledWith(9);
   });
 
-  it('preview: ValidationError → 422, HttpError upstream → 502', async () => {
+  it('preview: ValidationError → 422, fatal HttpError → 503, other HttpError → 502', async () => {
     const { app, cards } = setup();
     const { thresholdCents: _t, ...filters } = body;
     cards.preview.mockRejectedValueOnce(new ValidationError('no printings'));
     expect((await app.inject({ method: 'POST', url: '/api/cards/preview', payload: filters })).statusCode).toBe(422);
     cards.preview.mockRejectedValueOnce(new HttpError(401, 'HTTP 401 da api.cardtrader.com'));
-    const res = await app.inject({ method: 'POST', url: '/api/cards/preview', payload: filters });
-    expect(res.statusCode).toBe(502);
-    expect(res.json().error).toContain('401');
+    const fatal = await app.inject({ method: 'POST', url: '/api/cards/preview', payload: filters });
+    expect(fatal.statusCode).toBe(503);
+    expect(fatal.json().error).toContain('401');
+    cards.preview.mockRejectedValueOnce(new HttpError(500, 'HTTP 500 da api.cardtrader.com'));
+    expect((await app.inject({ method: 'POST', url: '/api/cards/preview', payload: filters })).statusCode).toBe(502);
+  });
+
+  it('a rate limit from an upstream service → 429 with its message', async () => {
+    const { app, importer } = setup();
+    importer.resolve.mockRejectedValueOnce(new RateLimitError('Scryfall rate limit reached: wait 30 seconds and try again'));
+    const payload = { name: 'Sol Ring', setCode: null, respectSet: false, languages: [], minCondition: 'Near Mint', foil: false };
+    const res = await app.inject({ method: 'POST', url: '/api/import/resolve', payload });
+    expect(res.statusCode).toBe(429);
+    expect(res.json()).toEqual({ error: 'Scryfall rate limit reached: wait 30 seconds and try again' });
+  });
+});
+
+describe('groups API', () => {
+  it('CRUD', async () => {
+    const { app } = setup();
+    const created = await app.inject({ method: 'POST', url: '/api/groups', payload: { name: ' Atraxa ' } });
+    expect(created.statusCode).toBe(201);
+    const { id } = created.json();
+    expect(created.json()).toMatchObject({ name: 'Atraxa', cardCount: 0 });
+    expect((await app.inject({ method: 'GET', url: '/api/groups' })).json()).toHaveLength(1);
+    const renamed = await app.inject({ method: 'PUT', url: `/api/groups/${id}`, payload: { name: 'Wishlist' } });
+    expect(renamed.json().name).toBe('Wishlist');
+    expect((await app.inject({ method: 'DELETE', url: `/api/groups/${id}` })).statusCode).toBe(204);
+    expect((await app.inject({ method: 'DELETE', url: `/api/groups/${id}` })).statusCode).toBe(404);
+  });
+
+  it('duplicate name → 422, empty name → 400, rename unknown → 404', async () => {
+    const { app } = setup();
+    await app.inject({ method: 'POST', url: '/api/groups', payload: { name: 'Deck' } });
+    expect((await app.inject({ method: 'POST', url: '/api/groups', payload: { name: 'deck' } })).statusCode).toBe(422);
+    expect((await app.inject({ method: 'POST', url: '/api/groups', payload: { name: '' } })).statusCode).toBe(400);
+    expect((await app.inject({ method: 'PUT', url: '/api/groups/99', payload: { name: 'X' } })).statusCode).toBe(404);
+  });
+});
+
+describe('bulk and import API', () => {
+  it('POST /api/cards/bulk validates and forwards', async () => {
+    const { app, cards } = setup();
+    const res = await app.inject({ method: 'POST', url: '/api/cards/bulk', payload: { ids: [1, 1], action: { type: 'delete' } } });
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toEqual({ updated: [1], skipped: [] });
+    expect(cards.bulk).toHaveBeenCalledWith({ ids: [1], action: { type: 'delete' } });
+    expect((await app.inject({ method: 'POST', url: '/api/cards/bulk', payload: { ids: [], action: { type: 'delete' } } })).statusCode).toBe(400);
+  });
+
+  it('POST /api/import/resolve validates and forwards', async () => {
+    const { app, importer } = setup();
+    const payload = { name: 'Sol Ring', setCode: 'c21', respectSet: true, languages: [], minCondition: 'Near Mint', foil: false };
+    const res = await app.inject({ method: 'POST', url: '/api/import/resolve', payload });
+    expect(res.statusCode).toBe(200);
+    expect(importer.resolve).toHaveBeenCalledWith(payload);
+    expect((await app.inject({ method: 'POST', url: '/api/import/resolve', payload: { name: '' } })).statusCode).toBe(400);
   });
 });
 

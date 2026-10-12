@@ -21,6 +21,8 @@ export interface TrackedCard {
   name: string;
   scryfallOracleId: string;
   imageUrl: string | null;
+  /** Group the card belongs to, null = no group. */
+  groupId: number | null;
   /** Selected CardTrader expansions; [] = any. */
   expansionIds: number[];
   /** Names of the selected expansions (empty if "any"). */
@@ -71,6 +73,30 @@ export interface CardLookupDto {
   name: string;
   imageUrl: string | null;
   printings: Printing[];
+}
+
+export interface CardGroup {
+  id: number;
+  name: string;
+  cardCount: number;
+  createdAt: string;
+}
+
+export interface BulkResult {
+  updated: number[];
+  skipped: { id: number; reason: string }[];
+}
+
+/** One decklist line resolved for the import review. */
+export interface ImportResolveResult {
+  name: string;
+  imageUrl: string | null;
+  /** [] = any expansion. */
+  expansionIds: number[];
+  priceCents: number | null;
+  listing: Listing | null;
+  /** A card with the same Scryfall oracle id is already tracked. */
+  alreadyTracked: boolean;
 }
 
 export interface Expansion {

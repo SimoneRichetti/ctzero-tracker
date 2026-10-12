@@ -17,6 +17,7 @@ interface CardRecord {
   name: string;
   scryfall_oracle_id: string;
   image_url: string | null;
+  group_id: number | null;
   expansion_ids: string;
   languages: string;
   min_condition: string;
@@ -44,6 +45,7 @@ export interface NewCard {
   minCondition: Condition;
   foil: boolean;
   thresholdCents: number;
+  groupId?: number | null;
 }
 
 export type CardPatch = Partial<Omit<TrackedCard, 'id' | 'createdAt' | 'updatedAt' | 'expansionNames'>>;
@@ -52,6 +54,7 @@ const COLUMNS: Record<keyof CardPatch, string> = {
   name: 'name',
   scryfallOracleId: 'scryfall_oracle_id',
   imageUrl: 'image_url',
+  groupId: 'group_id',
   expansionIds: 'expansion_ids',
   languages: 'languages',
   minCondition: 'min_condition',
@@ -89,6 +92,7 @@ function toCard(db: Db, r: CardRecord): TrackedCard {
     name: r.name,
     scryfallOracleId: r.scryfall_oracle_id,
     imageUrl: r.image_url,
+    groupId: r.group_id,
     expansionIds,
     expansionNames: expansionIds.length > 0 ? expansionNames(db, r.id) : [],
     languages: JSON.parse(r.languages) as Language[],
@@ -124,13 +128,14 @@ export function insertCard(db: Db, c: NewCard, now: Date = new Date()): TrackedC
   const res = db
     .prepare(
       `INSERT INTO tracked_cards
-        (name, scryfall_oracle_id, image_url, expansion_ids, languages, min_condition, foil, threshold_cents, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        (name, scryfall_oracle_id, image_url, group_id, expansion_ids, languages, min_condition, foil, threshold_cents, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     )
     .run(
       c.name,
       c.scryfallOracleId,
       c.imageUrl,
+      c.groupId ?? null,
       JSON.stringify(c.expansionIds),
       JSON.stringify(c.languages),
       c.minCondition,
@@ -153,6 +158,10 @@ export function updateCard(db: Db, id: number, patch: CardPatch, now: Date = new
 
 export function deleteCard(db: Db, id: number): boolean {
   return Number(db.prepare('DELETE FROM tracked_cards WHERE id = ?').run(id).changes) > 0;
+}
+
+export function cardExistsByOracleId(db: Db, oracleId: string): boolean {
+  return db.prepare('SELECT 1 FROM tracked_cards WHERE scryfall_oracle_id = ? LIMIT 1').get(oracleId) !== undefined;
 }
 
 export function getBlueprints(db: Db, cardId: number): CardBlueprint[] {

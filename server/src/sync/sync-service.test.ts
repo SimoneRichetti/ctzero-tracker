@@ -1,7 +1,7 @@
 import { DEFAULT_SETTINGS, type CardBlueprint, type SyncTrigger, type TrackedCard, type TrackedSealed } from '@ctzero/shared';
 import { beforeEach, describe, expect, it, vi, type Mock } from 'vitest';
 import type { CardLookup } from '../catalog/catalog';
-import { HttpError } from '../clients/http';
+import { HttpError, RateLimitError } from '../clients/http';
 import {
   deleteCard,
   getBlueprints,
@@ -214,6 +214,15 @@ describe('SyncService', () => {
     const card = addCard('Bolt', 100, 4000, { expansionIds: [] });
     updateCard(db, card.id, { blueprintsResolvedAt: new Date(t0.getTime() - 8 * DAY).toISOString() }, t0);
     catalog.lookup.mockRejectedValueOnce(new HttpError(0, 'Network error contacting api.scryfall.com'));
+    prices.set(100, 4500);
+    expect(await run()).toMatchObject({ status: 'ok' });
+    expect(getCard(db, card.id)!.lastPriceCents).toBe(4500);
+  });
+
+  it('a Scryfall rate limit during re-resolution does not stop the run', async () => {
+    const card = addCard('Bolt', 100, 4000, { expansionIds: [] });
+    updateCard(db, card.id, { blueprintsResolvedAt: new Date(t0.getTime() - 8 * DAY).toISOString() }, t0);
+    catalog.lookup.mockRejectedValueOnce(new RateLimitError('Scryfall rate limit reached: wait 30 seconds and try again'));
     prices.set(100, 4500);
     expect(await run()).toMatchObject({ status: 'ok' });
     expect(getCard(db, card.id)!.lastPriceCents).toBe(4500);

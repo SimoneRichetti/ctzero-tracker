@@ -2,6 +2,7 @@ import type { CardBlueprint, CardInput } from '@ctzero/shared';
 import { beforeEach, describe, expect, it, vi, type Mock } from 'vitest';
 import type { CardLookup } from '../catalog/catalog';
 import { getBlueprints, getCard, listCards, listSnapshots } from '../db/cards-repo';
+import { insertGroup } from '../db/groups-repo';
 import { openDb, type Db } from '../db/db';
 import { NotFoundError, ValidationError } from '../errors';
 import { makeProduct } from '../test-utils';
@@ -193,5 +194,93 @@ describe('preview', () => {
     expect(result.presets[0]).toEqual({ label: '-10%', cents: 3420 });
     expect(result.listing?.expansionName).toBe('MH2');
     expect(listCards(db)).toEqual([]);
+  });
+});
+
+describe('groups', () => {
+  it('create puts the card in the group; unknown group → ValidationError and nothing saved', async () => {
+    const g = insertGroup(db, 'Deck');
+    expect((await service.create({ ...input, groupId: g.id })).groupId).toBe(g.id);
+    await expect(service.create({ ...input, groupId: 999 })).rejects.toBeInstanceOf(ValidationError);
+    expect(listCards(db)).toHaveLength(1);
+  });
+
+  it('update: undefined keeps the group, null clears it, without touching price state', async () => {
+    const g = insertGroup(db, 'Deck');
+    const card = await service.create({ ...input, groupId: g.id });
+    expect((await service.update(card.id, update)).groupId).toBe(g.id);
+    const cleared = await service.update(card.id, { ...update, groupId: null });
+    expect(cleared).toMatchObject({ groupId: null, configVersion: 1, lastPriceCents: 3800, alertState: 'below' });
+    expect(catalog.lookup).toHaveBeenCalledTimes(1);
+  });
+
+  it('update with filter change also applies the group', async () => {
+    const g = insertGroup(db, 'Deck');
+    const card = await service.create(input);
+    expect(await service.update(card.id, { ...update, foil: true, groupId: g.id })).toMatchObject({ foil: true, groupId: g.id });
+  });
+
+  it('update with unknown group → ValidationError, card unchanged', async () => {
+    const card = await service.create(input);
+    await expect(service.update(card.id, { ...update, thresholdCents: 11, groupId: 999 })).rejects.toBeInstanceOf(ValidationError);
+    expect(getCard(db, card.id)?.thresholdCents).toBe(4000);
+  });
+});
+
+describe('bulk', () => {
+  it('fixed threshold: updates and re-evaluates silently', async () => {
+    const a = await service.create(input);
+    const b = await service.create(input);
+    const result = service.bulk({ ids: [a.id, b.id], action: { type: 'threshold', mode: 'fixed', cents: 3000 } });
+    expect(result).toEqual({ updated: [a.id, b.id], skipped: [] });
+    expect(getCard(db, a.id)).toMatchObject({ thresholdCents: 3000, alertState: 'above', lastNotifiedPriceCents: null, configVersion: 1 });
+  });
+
+  it('percent threshold: computed from the current price; cards without price are skipped', async () => {
+    const a = await service.create(input);
+    ct.products.mockRejectedValueOnce(new Error('timeout'));
+    const b = await service.create(input);
+    const result = service.bulk({ ids: [a.id, b.id], action: { type: 'threshold', mode: 'percent', percent: 10 } });
+    expect(result).toEqual({ updated: [a.id], skipped: [{ id: b.id, reason: 'no current price' }] });
+    // 3800 > 3420: the card is now above its threshold.
+    expect(getCard(db, a.id)).toMatchObject({ thresholdCents: 3420, alertState: 'above', lastNotifiedPriceCents: null });
+    expect(getCard(db, b.id)?.thresholdCents).toBe(4000);
+  });
+
+  it('percent threshold on a very cheap card stays at the minimum', async () => {
+    price = 5;
+    const a = await service.create(input);
+    service.bulk({ ids: [a.id], action: { type: 'threshold', mode: 'percent', percent: 90 } });
+    expect(getCard(db, a.id)?.thresholdCents).toBe(11);
+  });
+
+  it('group: moves and clears without touching configVersion', async () => {
+    const g = insertGroup(db, 'Deck');
+    const a = await service.create(input);
+    service.bulk({ ids: [a.id], action: { type: 'group', groupId: g.id } });
+    expect(getCard(db, a.id)).toMatchObject({ groupId: g.id, configVersion: 1 });
+    service.bulk({ ids: [a.id], action: { type: 'group', groupId: null } });
+    expect(getCard(db, a.id)?.groupId).toBeNull();
+  });
+
+  it('group: unknown group → ValidationError, nothing changed', async () => {
+    const a = await service.create(input);
+    expect(() => service.bulk({ ids: [a.id], action: { type: 'group', groupId: 999 } })).toThrow(ValidationError);
+    expect(getCard(db, a.id)?.groupId).toBeNull();
+  });
+
+  it('delete, with unknown ids reported as skipped', async () => {
+    const a = await service.create(input);
+    const result = service.bulk({ ids: [a.id, 999], action: { type: 'delete' } });
+    expect(result).toEqual({ updated: [a.id], skipped: [{ id: 999, reason: 'not found' }] });
+    expect(listCards(db)).toEqual([]);
+  });
+
+  it('a failure midway rolls back the whole batch', async () => {
+    const a = await service.create(input);
+    const b = await service.create(input);
+    db.exec(`CREATE TRIGGER fail_b BEFORE UPDATE ON tracked_cards WHEN NEW.id = ${b.id} BEGIN SELECT RAISE(ABORT, 'boom'); END`);
+    expect(() => service.bulk({ ids: [a.id, b.id], action: { type: 'threshold', mode: 'fixed', cents: 3000 } })).toThrow('boom');
+    expect(getCard(db, a.id)?.thresholdCents).toBe(4000);
   });
 });

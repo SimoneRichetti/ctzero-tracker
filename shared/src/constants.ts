@@ -37,3 +37,6 @@ export const LANGUAGE_LABELS: Record<Language, string> = {
   'zh-CN': 'Simplified Chinese',
   'zh-TW': 'Traditional Chinese',
 };
+
+/** Lowest threshold allowed: CardTrader Zero listings below this are not worth tracking. */
+export const MIN_THRESHOLD_CENTS = 11;

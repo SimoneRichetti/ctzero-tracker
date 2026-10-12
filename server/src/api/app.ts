@@ -2,16 +2,21 @@ import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import fastifyStatic from '@fastify/static';
 import {
+  bulkCardsSchema,
   cardFiltersSchema,
   cardInputSchema,
   cardUpdateSchema,
+  groupInputSchema,
+  importResolveSchema,
   sealedInputSchema,
   sealedPreviewSchema,
   sealedUpdateSchema,
   settingsSchema,
+  type CardGroup,
   type CardLookupDto,
   type Expansion,
   type HealthDto,
+  type ImportResolveResult,
   type SealedProduct,
   type SyncStatusDto,
 } from '@ctzero/shared';
@@ -20,20 +25,23 @@ import { z } from 'zod';
 import type { CardService } from '../cards/card-service';
 import type { Catalog } from '../catalog/catalog';
 import { parseBlueprintRef, type SealedCatalog } from '../catalog/sealed-catalog';
-import { HttpError } from '../clients/http';
+import { HttpError, RateLimitError, isFatalHttpError } from '../clients/http';
 import type { ScryfallClient } from '../clients/scryfall';
 import type { TelegramClient } from '../clients/telegram';
 import type { Db } from '../db/db';
+import { deleteGroup, insertGroup, listGroups, renameGroup } from '../db/groups-repo';
 import { getLastFinishedRun, getRunningRun } from '../db/runs-repo';
 import { getSettings, saveSettings } from '../db/settings-repo';
 import { NotFoundError, ValidationError } from '../errors';
+import type { ImportService } from '../import/import-service';
 import type { Scheduler } from '../scheduler/scheduler';
 import type { SealedService } from '../sealed/sealed-service';
 import type { SyncService } from '../sync/sync-service';
 
 export interface AppDeps {
   db: Db;
-  cards: Pick<CardService, 'list' | 'create' | 'update' | 'delete' | 'preview'>;
+  cards: Pick<CardService, 'list' | 'create' | 'update' | 'delete' | 'preview' | 'bulk'>;
+  importer: Pick<ImportService, 'resolve'>;
   sealed: Pick<SealedService, 'list' | 'create' | 'update' | 'delete' | 'preview'>;
   sealedCatalog: Pick<SealedCatalog, 'listExpansions' | 'sealedProducts' | 'sealedProduct'>;
   sync: Pick<SyncService, 'start'>;
@@ -63,7 +71,10 @@ export function buildApp(deps: AppDeps): FastifyInstance {
     if (err instanceof z.ZodError) return reply.status(400).send({ error: formatZodError(err) });
     if (err instanceof NotFoundError) return reply.status(404).send({ error: err.message });
     if (err instanceof ValidationError) return reply.status(422).send({ error: err.message });
-    if (err instanceof HttpError) return reply.status(502).send({ error: err.message });
+    // An upstream service asked us to slow down: the client pauses and retries.
+    if (err instanceof RateLimitError) return reply.status(429).send({ error: err.message });
+    // Missing or invalid token: retrying is pointless, the client stops its batch.
+    if (err instanceof HttpError) return reply.status(isFatalHttpError(err) ? 503 : 502).send({ error: err.message });
     const status = (err as { statusCode?: number }).statusCode ?? 500;
     if (status >= 500) app.log.error(err);
     return reply.status(status).send({ error: (err as Error).message });
@@ -88,6 +99,31 @@ export function buildApp(deps: AppDeps): FastifyInstance {
   });
 
   app.post('/api/cards/preview', async (req) => deps.cards.preview(cardFiltersSchema.parse(req.body)));
+
+  app.post('/api/cards/bulk', async (req) => deps.cards.bulk(bulkCardsSchema.parse(req.body)));
+
+  app.get('/api/groups', async (): Promise<CardGroup[]> => listGroups(deps.db));
+
+  app.post('/api/groups', async (req, reply) => {
+    const group = insertGroup(deps.db, groupInputSchema.parse(req.body).name);
+    return reply.status(201).send(group);
+  });
+
+  app.put('/api/groups/:id', async (req) => {
+    const { id } = idParams.parse(req.params);
+    return renameGroup(deps.db, id, groupInputSchema.parse(req.body).name);
+  });
+
+  app.delete('/api/groups/:id', async (req, reply) => {
+    const { id } = idParams.parse(req.params);
+    if (!deleteGroup(deps.db, id)) throw new NotFoundError('Group not found');
+    return reply.status(204).send();
+  });
+
+  app.post(
+    '/api/import/resolve',
+    async (req): Promise<ImportResolveResult> => deps.importer.resolve(importResolveSchema.parse(req.body)),
+  );
 
   app.get('/api/autocomplete', async (req) => deps.scryfall.autocomplete(autocompleteQuery.parse(req.query).q));
 

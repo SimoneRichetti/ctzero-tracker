@@ -102,7 +102,7 @@ describe('update', () => {
   });
 
   it('missing product → NotFoundError', async () => {
-    await expect(service.update(99, { languages: [], thresholdCents: 1 })).rejects.toThrow(NotFoundError);
+    await expect(service.update(99, { languages: [], thresholdCents: 11 })).rejects.toThrow(NotFoundError);
   });
 });
 

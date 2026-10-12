@@ -100,4 +100,14 @@ describe('Catalog.resolveBlueprints', () => {
     const lookup = await catalog.lookup('ragavan');
     await expect(catalog.resolveBlueprints(lookup, [99])).rejects.toBeInstanceOf(ValidationError);
   });
+
+  it('caches blueprints per expansion for 1 hour', async () => {
+    const lookup = await catalog.lookup('ragavan');
+    await catalog.resolveBlueprints(lookup, []);
+    await catalog.resolveBlueprints(lookup, [1]);
+    expect(ct.blueprints).toHaveBeenCalledTimes(2); // expansions 1 and 2, once each
+    clock = 61 * 60 * 1000;
+    await catalog.resolveBlueprints(lookup, [1]);
+    expect(ct.blueprints).toHaveBeenCalledTimes(3);
+  });
 });

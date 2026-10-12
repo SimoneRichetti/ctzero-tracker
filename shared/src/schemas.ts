@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { CONDITIONS, LANGUAGES } from './constants';
+import { CONDITIONS, LANGUAGES, MIN_THRESHOLD_CENTS } from './constants';
 
 /** A list without duplicates: repeated values are dropped, keeping the first occurrence. */
 const uniqueArray = <T extends z.ZodType>(item: T) => z.array(item).transform((a) => [...new Set(a)]);
@@ -14,13 +14,46 @@ export const cardFiltersSchema = z.object({
 });
 export type CardFilters = z.infer<typeof cardFiltersSchema>;
 
+const thresholdCentsSchema = z.number().int().min(MIN_THRESHOLD_CENTS);
+
+/** `undefined` = leave unchanged (on update), `null` = no group. */
+const groupIdSchema = z.number().int().positive().nullable().optional();
+
 export const cardInputSchema = cardFiltersSchema.extend({
-  thresholdCents: z.number().int().positive(),
+  thresholdCents: thresholdCentsSchema,
+  groupId: groupIdSchema,
 });
 export type CardInput = z.infer<typeof cardInputSchema>;
 
 export const cardUpdateSchema = cardInputSchema.omit({ name: true });
 export type CardUpdate = z.infer<typeof cardUpdateSchema>;
+
+export const groupInputSchema = z.object({ name: z.string().trim().min(1).max(80) });
+export type GroupInput = z.infer<typeof groupInputSchema>;
+
+export const bulkActionSchema = z.union([
+  z.object({ type: z.literal('threshold'), mode: z.literal('fixed'), cents: thresholdCentsSchema }),
+  z.object({ type: z.literal('threshold'), mode: z.literal('percent'), percent: z.number().min(1).max(90) }),
+  z.object({ type: z.literal('group'), groupId: z.number().int().positive().nullable() }),
+  z.object({ type: z.literal('delete') }),
+]);
+export type BulkAction = z.infer<typeof bulkActionSchema>;
+
+export const bulkCardsSchema = z.object({
+  ids: z
+    .array(z.number().int().positive())
+    .min(1)
+    .max(500)
+    .transform((a) => [...new Set(a)]),
+  action: bulkActionSchema,
+});
+export type BulkCards = z.infer<typeof bulkCardsSchema>;
+
+export const importResolveSchema = cardFiltersSchema.omit({ expansionIds: true }).extend({
+  setCode: z.string().trim().min(1).nullable(),
+  respectSet: z.boolean(),
+});
+export type ImportResolve = z.infer<typeof importResolveSchema>;
 
 export const sealedPreviewSchema = z.object({
   blueprintId: z.number().int().positive(),
@@ -31,7 +64,7 @@ export const sealedPreviewSchema = z.object({
 export type SealedPreview = z.infer<typeof sealedPreviewSchema>;
 
 export const sealedInputSchema = sealedPreviewSchema.extend({
-  thresholdCents: z.number().int().positive(),
+  thresholdCents: thresholdCentsSchema,
 });
 export type SealedInput = z.infer<typeof sealedInputSchema>;
 

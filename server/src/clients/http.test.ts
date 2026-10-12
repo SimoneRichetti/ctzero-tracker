@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { HttpError, createThrottle, isFatalHttpError, requestJson } from './http';
+import { HttpError, RateLimitError, createThrottle, isFatalHttpError, requestJson } from './http';
 
 const fetchMock = vi.fn();
 beforeEach(() => {
@@ -21,6 +21,15 @@ describe('requestJson', () => {
     fetchMock.mockResolvedValueOnce(json({}, 429)).mockResolvedValueOnce(json({ ok: true }));
     await expect(requestJson('https://x.test/a', { retryDelayMs: 1 })).resolves.toEqual({ ok: true });
     expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it('with retryRateLimited false, a 429 is thrown right away', async () => {
+    fetchMock.mockImplementation(async () => json({}, 429));
+    const err = (await requestJson('https://x.test/a', { retryDelayMs: 1, retryRateLimited: false }).catch(
+      (e: unknown) => e,
+    )) as HttpError;
+    expect(err.status).toBe(429);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 
   it('throws HttpError after retries on 500', async () => {
@@ -69,6 +78,8 @@ describe('isFatalHttpError', () => {
   it('recognizes 401 and 403', () => {
     expect(isFatalHttpError(new HttpError(401, 'x'))).toBe(true);
     expect(isFatalHttpError(new HttpError(403, 'x'))).toBe(true);
+    expect(isFatalHttpError(new RateLimitError('x'))).toBe(false);
+    expect(isFatalHttpError(new HttpError(429, 'x'))).toBe(false);
     expect(isFatalHttpError(new HttpError(500, 'x'))).toBe(false);
     expect(isFatalHttpError(new Error('x'))).toBe(false);
   });

@@ -1,4 +1,14 @@
-import type { CardBlueprint, CardFilters, CardInput, CardUpdate, PreviewResult, TrackedCard } from '@ctzero/shared';
+import {
+  percentBelow,
+  type BulkCards,
+  type BulkResult,
+  type CardBlueprint,
+  type CardFilters,
+  type CardInput,
+  type CardUpdate,
+  type PreviewResult,
+  type TrackedCard,
+} from '@ctzero/shared';
 import { evaluateSilently } from '../alerts/rules';
 import type { Catalog } from '../catalog/catalog';
 import type { CardTraderClient } from '../clients/cardtrader';
@@ -12,7 +22,8 @@ import {
   updateCard,
 } from '../db/cards-repo';
 import { transaction, type Db } from '../db/db';
-import { NotFoundError, errorMessage } from '../errors';
+import { getGroup } from '../db/groups-repo';
+import { NotFoundError, ValidationError, errorMessage } from '../errors';
 import { priceCard } from '../pricing/card-pricer';
 import { thresholdPresets } from '../pricing/presets';
 
@@ -43,6 +54,11 @@ export class CardService {
     return this.deps.now?.() ?? new Date();
   }
 
+  /** Throws if `groupId` is set but does not exist. */
+  private assertGroup(groupId: number | null | undefined): void {
+    if (groupId != null && !getGroup(this.deps.db, groupId)) throw new ValidationError('Group not found');
+  }
+
   list(): TrackedCard[] {
     return listCards(this.deps.db);
   }
@@ -62,6 +78,7 @@ export class CardService {
 
   async create(input: CardInput): Promise<TrackedCard> {
     const { db, catalog } = this.deps;
+    this.assertGroup(input.groupId);
     const lookup = await catalog.lookup(input.name);
     const blueprints = await catalog.resolveBlueprints(lookup, input.expansionIds);
     const now = this.now();
@@ -77,6 +94,7 @@ export class CardService {
           minCondition: input.minCondition,
           foil: input.foil,
           thresholdCents: input.thresholdCents,
+          groupId: input.groupId ?? null,
         },
         now,
       );
@@ -90,13 +108,19 @@ export class CardService {
     const { db, catalog } = this.deps;
     const card = getCard(db, id);
     if (!card) throw new NotFoundError('Card not found');
+    this.assertGroup(input.groupId);
+    const groupPatch = input.groupId !== undefined ? { groupId: input.groupId } : {};
     const now = this.now();
 
     if (!filtersChanged(card, input)) {
       return updateCard(
         db,
         id,
-        { thresholdCents: input.thresholdCents, ...evaluateSilently(card.lastPriceCents, input.thresholdCents) },
+        {
+          thresholdCents: input.thresholdCents,
+          ...evaluateSilently(card.lastPriceCents, input.thresholdCents),
+          ...groupPatch,
+        },
         now,
       );
     }
@@ -115,6 +139,7 @@ export class CardService {
           minCondition: input.minCondition,
           foil: input.foil,
           thresholdCents: input.thresholdCents,
+          ...groupPatch,
           configVersion: card.configVersion + 1,
           lastPriceCents: null,
           lastListing: null,
@@ -133,6 +158,39 @@ export class CardService {
 
   delete(id: number): void {
     if (!deleteCard(this.deps.db, id)) throw new NotFoundError('Card not found');
+  }
+
+  /** Fast bulk edits, DB only, in one transaction. */
+  bulk(input: BulkCards): BulkResult {
+    const { db } = this.deps;
+    const { action } = input;
+    if (action.type === 'group') this.assertGroup(action.groupId);
+    const now = this.now();
+    return transaction(db, () => {
+      const updated: number[] = [];
+      const skipped: BulkResult['skipped'] = [];
+      for (const id of input.ids) {
+        const card = getCard(db, id);
+        if (!card) {
+          skipped.push({ id, reason: 'not found' });
+          continue;
+        }
+        if (action.type === 'delete') {
+          deleteCard(db, id);
+        } else if (action.type === 'group') {
+          updateCard(db, id, { groupId: action.groupId }, now);
+        } else {
+          if (action.mode === 'percent' && card.lastPriceCents === null) {
+            skipped.push({ id, reason: 'no current price' });
+            continue;
+          }
+          const cents = action.mode === 'fixed' ? action.cents : percentBelow(card.lastPriceCents!, action.percent);
+          updateCard(db, id, { thresholdCents: cents, ...evaluateSilently(card.lastPriceCents, cents) }, now);
+        }
+        updated.push(id);
+      }
+      return { updated, skipped };
+    });
   }
 
   /**

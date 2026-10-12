@@ -5,6 +5,7 @@ import { DEFAULT_SETTINGS, type Listing } from '@ctzero/shared';
 import { beforeEach, describe, expect, it } from 'vitest';
 import { NotFoundError } from '../errors';
 import {
+  cardExistsByOracleId,
   deleteCard,
   getBlueprints,
   getCard,
@@ -141,6 +142,12 @@ describe('cards-repo', () => {
     const { id } = insertCard(db, newCard, t0);
     insertSnapshot(db, { cardId: id, configVersion: 2, syncedAt: t0.toISOString(), priceCents: null });
     expect(listSnapshots(db, id)).toEqual([{ configVersion: 2, syncedAt: t0.toISOString(), priceCents: null }]);
+  });
+
+  it('cardExistsByOracleId', () => {
+    expect(cardExistsByOracleId(db, 'oid')).toBe(false);
+    insertCard(db, newCard, t0);
+    expect(cardExistsByOracleId(db, 'oid')).toBe(true);
   });
 });
 

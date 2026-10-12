@@ -1,10 +1,14 @@
 import type { CardBlueprint, Printing } from '@ctzero/shared';
-import { MTG_GAME_ID, type CardTraderClient, type CtExpansion } from '../clients/cardtrader';
+import { MTG_GAME_ID, type CardTraderClient, type CtBlueprint, type CtExpansion } from '../clients/cardtrader';
 import { HttpError } from '../clients/http';
 import { cardImage, type ScryfallCard, type ScryfallClient } from '../clients/scryfall';
 import { NotFoundError, ValidationError } from '../errors';
 
 const EXPANSIONS_TTL_MS = 24 * 3600 * 1000;
+const BLUEPRINTS_TTL_MS = 3600 * 1000;
+
+/** Only the fields needed to match blueprints to Scryfall printings. */
+type SlimBlueprint = Pick<CtBlueprint, 'id' | 'scryfall_id'>;
 
 export interface CardLookup {
   name: string;
@@ -18,6 +22,7 @@ export interface CardLookup {
 
 export class Catalog {
   private expansionsCache: { fetchedAt: number; list: CtExpansion[] } | null = null;
+  private readonly blueprintsCache = new Map<number, { fetchedAt: number; list: SlimBlueprint[] }>();
 
   constructor(
     private readonly ct: CardTraderClient,
@@ -31,6 +36,15 @@ export class Catalog {
     if (cached && this.now() - cached.fetchedAt < maxAgeMs) return cached.list;
     const list = (await this.ct.expansions()).filter((e) => e.game_id === MTG_GAME_ID);
     this.expansionsCache = { fetchedAt: this.now(), list };
+    return list;
+  }
+
+  /** Blueprints of an expansion, cached for an hour (an import resolves and then creates the same cards). */
+  private async expansionBlueprints(expansionId: number): Promise<SlimBlueprint[]> {
+    const cached = this.blueprintsCache.get(expansionId);
+    if (cached && this.now() - cached.fetchedAt < BLUEPRINTS_TTL_MS) return cached.list;
+    const list = (await this.ct.blueprints(expansionId)).map((bp) => ({ id: bp.id, scryfall_id: bp.scryfall_id }));
+    this.blueprintsCache.set(expansionId, { fetchedAt: this.now(), list });
     return list;
   }
 
@@ -71,7 +85,7 @@ export class Catalog {
     const out: CardBlueprint[] = [];
     for (const expansionId of targets) {
       const wanted = available.get(expansionId)!;
-      for (const bp of await this.ct.blueprints(expansionId)) {
+      for (const bp of await this.expansionBlueprints(expansionId)) {
         if (bp.scryfall_id && wanted.has(bp.scryfall_id)) {
           out.push({ blueprintId: bp.id, expansionId, expansionName: names.get(expansionId) ?? '' });
         }

@@ -3,8 +3,10 @@ import {
   CONDITIONS,
   LANGUAGES,
   LANGUAGE_LABELS,
+  MIN_THRESHOLD_CENTS,
   euroToCents,
   formatEuro,
+  type CardGroup,
   type CardLookupDto,
   type Condition,
   type Language,
@@ -22,7 +24,7 @@ import ToggleSwitch from 'primevue/toggleswitch';
 import { computed, ref, watch } from 'vue';
 import { api } from '../api';
 
-const props = defineProps<{ card: TrackedCard | null }>();
+const props = defineProps<{ card: TrackedCard | null; groups: CardGroup[]; defaultGroupId: number | null }>();
 const visible = defineModel<boolean>('visible', { required: true });
 const emit = defineEmits<{ saved: [card: TrackedCard] }>();
 
@@ -34,6 +36,7 @@ const languages = ref<Language[]>([]);
 const minCondition = ref<Condition>('Near Mint');
 const foil = ref(false);
 const preview = ref<PreviewResult | null>(null);
+const groupId = ref<number | null>(null);
 const thresholdEuro = ref<number | null>(null);
 const error = ref<string | null>(null);
 const loadingLookup = ref(false);
@@ -44,7 +47,7 @@ const isEdit = computed(() => props.card !== null);
 const conditionOptions = [...CONDITIONS];
 const languageOptions = LANGUAGES.map((code) => ({ code, label: LANGUAGE_LABELS[code] }));
 const expansionOptions = computed(() => lookup.value?.printings ?? []);
-const canSave = computed(() => lookup.value !== null && thresholdEuro.value !== null && thresholdEuro.value > 0);
+const canSave = computed(() => lookup.value !== null && thresholdEuro.value !== null && euroToCents(thresholdEuro.value) >= MIN_THRESHOLD_CENTS);
 
 watch(visible, (open) => {
   if (open) void reset();
@@ -75,6 +78,7 @@ async function reset() {
   foil.value = c?.foil ?? false;
   thresholdEuro.value = c ? c.thresholdCents / 100 : null;
   preview.value = null;
+  groupId.value = c ? c.groupId : props.defaultGroupId;
   if (c) await loadLookup(c.name);
 }
 
@@ -131,7 +135,11 @@ async function save() {
   if (!canSave.value || thresholdEuro.value === null) return;
   saving.value = true;
   error.value = null;
-  const payload = { ...filters(), thresholdCents: euroToCents(thresholdEuro.value) };
+  const payload = {
+    ...filters(),
+    thresholdCents: euroToCents(thresholdEuro.value),
+    groupId: groupId.value,
+  };
   try {
     const saved = props.card
       ? await api.put<TrackedCard>(`/api/cards/${props.card.id}`, payload)
@@ -240,6 +248,19 @@ async function save() {
         </div>
       </div>
       <div class="field">
+        <label for="group">Group</label>
+        <Select
+          v-model="groupId"
+          input-id="group"
+          :options="groups"
+          option-label="name"
+          option-value="id"
+          placeholder="No group"
+          show-clear
+          fluid
+        />
+      </div>
+      <div class="field">
         <label for="threshold">Notification threshold</label>
         <InputNumber
           v-model="thresholdEuro"
@@ -247,7 +268,7 @@ async function save() {
           mode="currency"
           currency="EUR"
           locale="en-US"
-          :min="0.01"
+          :min="MIN_THRESHOLD_CENTS / 100"
         />
       </div>
     </div>

@@ -19,6 +19,14 @@ describe('thresholdPresets', () => {
     expect(thresholdPresets(100).map((p) => p.label)).toEqual(['-10%', '-20%', '-30%']);
   });
 
+  it('never goes below the minimum threshold and drops duplicates', () => {
+    expect(thresholdPresets(14)).toEqual([
+      { label: '-10%', cents: 13 },
+      { label: '-20%', cents: 11 },
+    ]);
+    expect(thresholdPresets(5)).toEqual([{ label: '-10%', cents: 11 }]);
+  });
+
   it('without a price suggests only €1', () => {
     expect(thresholdPresets(null)).toEqual([{ label: '€1', cents: 100 }]);
   });

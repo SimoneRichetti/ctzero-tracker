@@ -1,0 +1,97 @@
+import {
+  MIN_THRESHOLD_CENTS,
+  percentBelow,
+  type CardInput,
+  type Condition,
+  type DecklistLine,
+  type ImportResolveResult,
+  type Language,
+} from '@ctzero/shared';
+import type { BatchOutcome } from './batch-runner';
+
+export type ThresholdDefault = { mode: 'percent'; percent: number } | { mode: 'fixed'; cents: number };
+
+export type RowStatus = 'ok' | 'tracked' | 'no_offers' | 'not_found' | 'error';
+
+export interface ReviewRow {
+  line: DecklistLine;
+  /** Foil used to resolve the line: the line's marker or the import default. */
+  foil: boolean;
+  result: ImportResolveResult | null;
+  error: string | null;
+  status: RowStatus;
+  include: boolean;
+  thresholdCents: number | null;
+}
+
+export function proposeThreshold(priceCents: number | null, def: ThresholdDefault): number | null {
+  if (def.mode === 'fixed') return def.cents;
+  return priceCents === null ? null : percentBelow(priceCents, def.percent);
+}
+
+/**
+ * One row per resolved line, in list order. Lines are matched by identity with the batch items;
+ * lines never reached (batch stopped) are left out.
+ */
+export function buildReviewRows(
+  lines: DecklistLine[],
+  outcome: Pick<BatchOutcome<DecklistLine, ImportResolveResult>, 'results' | 'errors'>,
+  def: ThresholdDefault,
+  defaultFoil: boolean,
+): ReviewRow[] {
+  const results = new Map(outcome.results.map((r) => [r.item, r.value]));
+  const errors = new Map(outcome.errors.map((e) => [e.item, e]));
+  const rows: ReviewRow[] = [];
+  for (const line of lines) {
+    const foil = line.foil || defaultFoil;
+    const result = results.get(line);
+    if (result) {
+      const status: RowStatus = result.alreadyTracked ? 'tracked' : result.priceCents === null ? 'no_offers' : 'ok';
+      const thresholdCents = proposeThreshold(result.priceCents, def);
+      rows.push({ line, foil, result, error: null, status, thresholdCents, include: status !== 'tracked' && thresholdCents !== null });
+      continue;
+    }
+    const error = errors.get(line);
+    if (error) {
+      rows.push({
+        line,
+        foil,
+        result: null,
+        error: error.message,
+        status: error.status === 404 ? 'not_found' : 'error',
+        include: false,
+        thresholdCents: null,
+      });
+    }
+  }
+  return rows;
+}
+
+export function canInclude(row: ReviewRow): boolean {
+  return row.result !== null && row.thresholdCents !== null && row.thresholdCents >= MIN_THRESHOLD_CENTS;
+}
+
+/** Entering a threshold includes the row; clearing it excludes the row. */
+export function setRowThreshold(row: ReviewRow, cents: number | null): void {
+  row.thresholdCents = cents !== null && cents >= MIN_THRESHOLD_CENTS ? cents : null;
+  row.include = row.thresholdCents !== null && row.result !== null;
+}
+
+export function rowsToCreate(rows: ReviewRow[]): ReviewRow[] {
+  return rows.filter((r) => r.include && canInclude(r));
+}
+
+export function createPayload(
+  row: ReviewRow,
+  opts: { languages: Language[]; minCondition: Condition; groupId: number | null },
+): CardInput {
+  return {
+    name: row.result!.name,
+    expansionIds: row.result!.expansionIds,
+    languages: opts.languages,
+    minCondition: opts.minCondition,
+    foil: row.foil,
+    thresholdCents: row.thresholdCents!,
+    groupId: opts.groupId,
+  };
+}
