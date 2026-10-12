@@ -10,6 +10,7 @@ import { useToast } from 'primevue/usetoast';
 import { computed, onMounted, ref, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { api } from '../api';
+import { bulkCards } from '../bulk-cards';
 import { STATUS_META, cardStatus, deltaPercent, formatDateTime, sortForDisplay } from '../card-status';
 import BulkFiltersDialog from '../components/BulkFiltersDialog.vue';
 import BulkGroupDialog from '../components/BulkGroupDialog.vue';
@@ -71,11 +72,10 @@ function hidePreview() {
 
 async function load() {
   loading.value = true;
+  // Loaded on their own: a failure on groups must not leave the card list empty.
+  const groupsLoaded = loadGroups();
   try {
-    [cards.value, groups.value] = await Promise.all([
-      api.get<TrackedCard[]>('/api/cards'),
-      api.get<CardGroup[]>('/api/groups'),
-    ]);
+    cards.value = await api.get<TrackedCard[]>('/api/cards');
     // Re-derive the selection from fresh data: drops deleted cards and avoids stale snapshots.
     selected.value = cards.value.filter((c) => selected.value.some((s) => s.id === c.id));
   } catch (e) {
@@ -83,6 +83,7 @@ async function load() {
   } finally {
     loading.value = false;
   }
+  await groupsLoaded;
 }
 
 function openNew() {
@@ -162,9 +163,11 @@ function confirmBulkDelete() {
     rejectProps: { label: 'Cancel', severity: 'secondary', outlined: true },
     accept: async () => {
       try {
-        onBulkDone(await api.post<BulkResult>('/api/cards/bulk', { ids, action: { type: 'delete' } }), 'removed');
+        onBulkDone(await bulkCards(ids, { type: 'delete' }), 'removed');
       } catch (e) {
         toast.add({ severity: 'error', summary: 'Error', detail: (e as Error).message, life: 5000 });
+        // Earlier chunks may have gone through.
+        void load();
       }
     },
   });

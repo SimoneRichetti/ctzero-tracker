@@ -47,7 +47,9 @@ export class Catalog {
     const cached = this.blueprintsCache.get(expansionId);
     if (cached && this.now() - cached.fetchedAt < BLUEPRINTS_TTL_MS) return cached.list;
     const list = (await this.ct.blueprints(expansionId)).map((bp) => ({ id: bp.id, scryfall_id: bp.scryfall_id }));
-    this.blueprintsCache.set(expansionId, { fetchedAt: this.now(), list });
+    const now = this.now();
+    for (const [k, v] of this.blueprintsCache) if (now - v.fetchedAt >= BLUEPRINTS_TTL_MS) this.blueprintsCache.delete(k);
+    this.blueprintsCache.set(expansionId, { fetchedAt: now, list });
     return list;
   }
 

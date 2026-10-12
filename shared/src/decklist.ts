@@ -24,11 +24,23 @@ const SECTION =
   /^(about|deck|main\s*deck|mainboard|sideboard|commanders?|companions?|maybeboard|considering|tokens?)\s*:?\s*(\(\d+\))?$/i;
 // Archidekt trailing label: ^Have,#37d67a^
 const LABEL = /\s+\^[^^]*\^$/;
-// Archidekt category tags, only after a (SET) [collector number] [foil marker] prefix
-const TAGS = /^(.*\([A-Za-z0-9]{2,6}\)(?:\s+\S+)?(?:\s+\*[FE]\*)?)(?:\s+\[[^\]]*\])+$/;
+// Archidekt category tag at the end of the line, e.g. [Ramp] or [Ramp,Land]
+const TAG = /\s+\[([^\]]*)\]$/;
+// [SET] is also a set format: only an all-uppercase code, with no (SET) before it, is read as one
+const BRACKET_SET = /^[A-Z0-9]{2,6}$/;
+const PAREN_SET = /\([A-Za-z0-9]{2,6}\)/;
 const FOIL = /\s+\*[FE]\*$/i;
 // [quantity[x]] name [(SET) or [SET] [collector number]]
 const CARD = /^(?:\d+\s*x?\s+)?(.+?)(?:\s+[([]([A-Za-z0-9]{2,6})[)\]](?:\s+\S+)?)?$/;
+
+function stripTags(line: string): string {
+  for (let m = TAG.exec(line); m; m = TAG.exec(line)) {
+    const before = line.slice(0, m.index);
+    if (BRACKET_SET.test(m[1]!) && !PAREN_SET.test(before)) break;
+    line = before;
+  }
+  return line;
+}
 
 /**
  * Parses a text decklist (Moxfield, Archidekt, MTGA, plain names), one card per line.
@@ -47,7 +59,7 @@ export function parseDecklist(text: string): ParsedDecklist {
     // MTGA exports start with "About" and "Name <deck name>" lines
     if (!seenCard && /^name\s/i.test(line)) return;
     line = line.replace(LABEL, '');
-    line = TAGS.exec(line)?.[1] ?? line;
+    line = stripTags(line);
     const foil = FOIL.test(line);
     if (foil) line = line.replace(FOIL, '');
     const match = CARD.exec(line);

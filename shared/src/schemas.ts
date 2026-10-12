@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { CONDITIONS, LANGUAGES, MIN_THRESHOLD_CENTS } from './constants';
+import { CONDITIONS, LANGUAGES, MAX_BULK_IDS, MIN_THRESHOLD_CENTS } from './constants';
 
 /** A list without duplicates: repeated values are dropped, keeping the first occurrence. */
 const uniqueArray = <T extends z.ZodType>(item: T) => z.array(item).transform((a) => [...new Set(a)]);
@@ -43,7 +43,7 @@ export const bulkCardsSchema = z.object({
   ids: z
     .array(z.number().int().positive())
     .min(1)
-    .max(500)
+    .max(MAX_BULK_IDS)
     .transform((a) => [...new Set(a)]),
   action: bulkActionSchema,
 });

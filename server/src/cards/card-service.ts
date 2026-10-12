@@ -83,6 +83,8 @@ export class CardService {
     const blueprints = await catalog.resolveBlueprints(lookup, input.expansionIds);
     const now = this.now();
     const card = transaction(db, () => {
+      // Checked again: the group may have been deleted while Scryfall was being called.
+      this.assertGroup(input.groupId);
       const created = insertCard(
         db,
         {
@@ -129,6 +131,7 @@ export class CardService {
     const lookup = await catalog.lookup(card.name);
     const blueprints = await catalog.resolveBlueprints(lookup, input.expansionIds);
     const updated = transaction(db, () => {
+      this.assertGroup(input.groupId);
       replaceBlueprints(db, id, blueprints);
       return updateCard(
         db,

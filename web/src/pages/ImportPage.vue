@@ -380,6 +380,7 @@ function startOver() {
             locale="en-US"
             :min="MIN_THRESHOLD_CENTS / 100"
             input-class="threshold-input"
+            :invalid="data.thresholdCents !== null && !canInclude(data)"
             aria-label="Threshold"
             @update:model-value="(v: number | null) => onThresholdInput(data, v)"
           />

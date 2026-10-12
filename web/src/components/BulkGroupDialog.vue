@@ -7,6 +7,7 @@ import Message from 'primevue/message';
 import Select from 'primevue/select';
 import { computed, ref, watch } from 'vue';
 import { api } from '../api';
+import { bulkCards } from '../bulk-cards';
 
 const props = defineProps<{ cards: TrackedCard[]; groups: CardGroup[] }>();
 const visible = defineModel<boolean>('visible', { required: true });
@@ -48,10 +49,10 @@ async function apply() {
   saving.value = true;
   error.value = null;
   try {
-    const result = await api.post<BulkResult>('/api/cards/bulk', {
-      ids: props.cards.map((c) => c.id),
-      action: { type: 'group', groupId: choice.value === NO_GROUP ? null : choice.value },
-    });
+    const result = await bulkCards(
+      props.cards.map((c) => c.id),
+      { type: 'group', groupId: choice.value === NO_GROUP ? null : choice.value },
+    );
     emit('done', result);
     visible.value = false;
   } catch (e) {

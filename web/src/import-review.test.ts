@@ -96,11 +96,14 @@ describe('inclusion and threshold edits', () => {
     expect(row).toMatchObject({ thresholdCents: null, include: false });
   });
 
-  it('setRowThreshold: a threshold below the minimum excludes the row', () => {
+  it('setRowThreshold: a threshold below the minimum is kept as typed but excludes the row', () => {
     const l = line('Bolt', 1);
     const [row] = buildReviewRows([l], { results: [{ item: l, value: result({ priceCents: 50 }) }], errors: [] }, percent, false);
-    setRowThreshold(row!, 10);
-    expect(row).toMatchObject({ thresholdCents: null, include: false });
+    setRowThreshold(row!, 0);
+    expect(row).toMatchObject({ thresholdCents: 0, include: false });
+    expect(rowsToCreate([row!])).toEqual([]);
+    setRowThreshold(row!, 50);
+    expect(row).toMatchObject({ thresholdCents: 50, include: true });
   });
 
   it('rowsToCreate keeps only included rows with a result and a threshold', () => {

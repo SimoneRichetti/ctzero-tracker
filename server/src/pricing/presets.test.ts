@@ -27,6 +27,14 @@ describe('thresholdPresets', () => {
     expect(thresholdPresets(5)).toEqual([{ label: '-10%', cents: 11 }]);
   });
 
+  it('omits €1 when a discount already lands on it', () => {
+    expect(thresholdPresets(111)).toEqual([
+      { label: '-10%', cents: 100 },
+      { label: '-20%', cents: 89 },
+      { label: '-30%', cents: 78 },
+    ]);
+  });
+
   it('without a price suggests only €1', () => {
     expect(thresholdPresets(null)).toEqual([{ label: '€1', cents: 100 }]);
   });

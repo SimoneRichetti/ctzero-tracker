@@ -88,6 +88,24 @@ describe('parseDecklist', () => {
     expect(lines).toEqual([{ name: 'Sol Ring', setCode: 'c21', foil: true, lineNo: 1 }]);
   });
 
+  it('strips Archidekt category tags on lines without a set', () => {
+    const { lines } = parseDecklist('1x Lightning Bolt [Burn]\n1x Counterspell [Interaction,Stack] [Blue]');
+    expect(lines.map((l) => [l.name, l.setCode])).toEqual([
+      ['Lightning Bolt', null],
+      ['Counterspell', null],
+    ]);
+  });
+
+  it('reads a lowercase foil marker before Archidekt tags', () => {
+    const { lines } = parseDecklist('1x Sol Ring (c21) 263 *f* [Ramp]');
+    expect(lines).toEqual([{ name: 'Sol Ring', setCode: 'c21', foil: true, lineNo: 1 }]);
+  });
+
+  it('keeps a bracket set followed by Archidekt tags', () => {
+    const { lines } = parseDecklist('1 Arcane Signet [CMR] [Ramp]');
+    expect(lines).toEqual([{ name: 'Arcane Signet', setCode: 'cmr', foil: false, lineNo: 1 }]);
+  });
+
   it('keeps the bracket set format working', () => {
     const { lines } = parseDecklist('1 Arcane Signet [CMR]');
     expect(lines).toEqual([{ name: 'Arcane Signet', setCode: 'cmr', foil: false, lineNo: 1 }]);

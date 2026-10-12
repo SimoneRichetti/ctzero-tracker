@@ -2,7 +2,7 @@ import type { CardBlueprint, CardInput } from '@ctzero/shared';
 import { beforeEach, describe, expect, it, vi, type Mock } from 'vitest';
 import type { CardLookup } from '../catalog/catalog';
 import { getBlueprints, getCard, listCards, listSnapshots } from '../db/cards-repo';
-import { insertGroup } from '../db/groups-repo';
+import { deleteGroup, insertGroup } from '../db/groups-repo';
 import { openDb, type Db } from '../db/db';
 import { NotFoundError, ValidationError } from '../errors';
 import { makeProduct } from '../test-utils';
@@ -218,6 +218,27 @@ describe('groups', () => {
     const g = insertGroup(db, 'Deck');
     const card = await service.create(input);
     expect(await service.update(card.id, { ...update, foil: true, groupId: g.id })).toMatchObject({ foil: true, groupId: g.id });
+  });
+
+  it('group deleted while the card is being looked up → ValidationError, nothing saved', async () => {
+    const g = insertGroup(db, 'Deck');
+    catalog.lookup.mockImplementationOnce(async () => {
+      deleteGroup(db, g.id);
+      return lookup;
+    });
+    await expect(service.create({ ...input, groupId: g.id })).rejects.toBeInstanceOf(ValidationError);
+    expect(listCards(db)).toEqual([]);
+  });
+
+  it('group deleted during an update with filter change → ValidationError, card unchanged', async () => {
+    const g = insertGroup(db, 'Deck');
+    const card = await service.create(input);
+    catalog.lookup.mockImplementationOnce(async () => {
+      deleteGroup(db, g.id);
+      return lookup;
+    });
+    await expect(service.update(card.id, { ...update, foil: true, groupId: g.id })).rejects.toBeInstanceOf(ValidationError);
+    expect(getCard(db, card.id)).toMatchObject({ foil: false, groupId: null });
   });
 
   it('update with unknown group → ValidationError, card unchanged', async () => {

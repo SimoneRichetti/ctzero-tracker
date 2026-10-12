@@ -70,10 +70,13 @@ export function canInclude(row: ReviewRow): boolean {
   return row.result !== null && row.thresholdCents !== null && row.thresholdCents >= MIN_THRESHOLD_CENTS;
 }
 
-/** Entering a threshold includes the row; clearing it excludes the row. */
+/**
+ * Entering a valid threshold includes the row; clearing it or going below the minimum excludes it.
+ * The value is kept as typed, so the input is not wiped by partial values such as 0 on the way to 0.50.
+ */
 export function setRowThreshold(row: ReviewRow, cents: number | null): void {
-  row.thresholdCents = cents !== null && cents >= MIN_THRESHOLD_CENTS ? cents : null;
-  row.include = row.thresholdCents !== null && row.result !== null;
+  row.thresholdCents = cents;
+  row.include = canInclude(row);
 }
 
 export function rowsToCreate(rows: ReviewRow[]): ReviewRow[] {

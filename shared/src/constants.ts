@@ -40,3 +40,6 @@ export const LANGUAGE_LABELS: Record<Language, string> = {
 
 /** Lowest threshold allowed: CardTrader Zero listings below this are not worth tracking. */
 export const MIN_THRESHOLD_CENTS = 11;
+
+/** Most card ids in one bulk request; the UI splits larger selections. */
+export const MAX_BULK_IDS = 500;

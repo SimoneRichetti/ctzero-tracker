@@ -6,7 +6,7 @@ import InputNumber from 'primevue/inputnumber';
 import Message from 'primevue/message';
 import SelectButton from 'primevue/selectbutton';
 import { computed, ref, watch } from 'vue';
-import { api } from '../api';
+import { bulkCards } from '../bulk-cards';
 import { MAX_PERCENT, MIN_PERCENT, THRESHOLD_MODE_OPTIONS, thresholdChoice } from '../threshold-choice';
 
 const props = defineProps<{ cards: TrackedCard[] }>();
@@ -33,7 +33,10 @@ async function apply() {
   saving.value = true;
   error.value = null;
   try {
-    const result = await api.post<BulkResult>('/api/cards/bulk', { ids: props.cards.map((c) => c.id), action: action.value });
+    const result = await bulkCards(
+      props.cards.map((c) => c.id),
+      action.value,
+    );
     emit('done', result);
     visible.value = false;
   } catch (e) {
