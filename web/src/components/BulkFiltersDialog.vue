@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import {
   CONDITIONS,
+  FOIL_OPTIONS,
   LANGUAGES,
   LANGUAGE_LABELS,
   type Condition,
@@ -13,7 +14,6 @@ import Dialog from 'primevue/dialog';
 import Message from 'primevue/message';
 import MultiSelect from 'primevue/multiselect';
 import Select from 'primevue/select';
-import ToggleSwitch from 'primevue/toggleswitch';
 import { computed, ref, watch } from 'vue';
 import { api } from '../api';
 import { runBatch, type BatchOutcome } from '../batch-runner';
@@ -32,7 +32,7 @@ const changeCondition = ref(false);
 const changeFoil = ref(false);
 const languages = ref<Language[]>([]);
 const minCondition = ref<Condition>('Near Mint');
-const foil = ref(false);
+const foil = ref<boolean | null>(null);
 const running = ref(false);
 const progress = ref({ done: 0, total: 0 });
 const pausedSeconds = ref<number | null>(null);
@@ -114,7 +114,9 @@ function abort() {
       <div class="field inline">
         <Checkbox v-model="changeFoil" binary input-id="chg-foil" />
         <label for="chg-foil">Foil</label>
-        <ToggleSwitch v-if="changeFoil" v-model="foil" />
+      </div>
+      <div v-if="changeFoil" class="field">
+        <Select v-model="foil" :options="FOIL_OPTIONS" option-label="label" option-value="value" fluid />
       </div>
     </template>
     <template v-else>

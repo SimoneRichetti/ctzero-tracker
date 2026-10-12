@@ -15,7 +15,7 @@ export async function priceCard(
   const products: CtProduct[] = [];
   for (const bp of blueprints) {
     for (const language of languages) {
-      products.push(...(await ct.products(bp.blueprintId, { foil: filter.foil, language })));
+      products.push(...(await ct.products(bp.blueprintId, { foil: filter.foil ?? undefined, language })));
     }
   }
   const names = new Map(blueprints.map((b) => [b.blueprintId, b.expansionName]));

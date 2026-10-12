@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import {
   CONDITIONS,
+  FOIL_OPTIONS,
   LANGUAGES,
   LANGUAGE_LABELS,
   MAX_IMPORT_CARDS,
@@ -64,7 +65,7 @@ const STATUS_TAGS: Record<RowStatus, { label: string; severity: 'success' | 'inf
 const text = ref('');
 const languages = ref<Language[]>([]);
 const minCondition = ref<Condition>('Near Mint');
-const foil = ref(false);
+const foil = ref<boolean | null>(null);
 const respectSet = ref(false);
 const thresholdMode = ref<'percent' | 'fixed'>('percent');
 const percent = ref<number | null>(10);
@@ -262,9 +263,9 @@ function startOver() {
           <label for="imp-condition">Minimum condition</label>
           <Select v-model="minCondition" input-id="imp-condition" :options="conditionOptions" fluid />
         </div>
-        <div class="field inline">
-          <ToggleSwitch v-model="foil" input-id="imp-foil" />
-          <label for="imp-foil">Foil (lines marked *F* are always foil)</label>
+        <div class="field">
+          <label for="imp-foil">Foil (lines marked *F* are always foil only)</label>
+          <Select v-model="foil" input-id="imp-foil" :options="FOIL_OPTIONS" option-label="label" option-value="value" fluid />
         </div>
         <div class="field inline">
           <ToggleSwitch v-model="respectSet" input-id="imp-set" />

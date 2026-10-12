@@ -30,7 +30,8 @@ export interface TrackedCard {
   /** [] = any language. */
   languages: Language[];
   minCondition: Condition;
-  foil: boolean;
+  /** null = foil or non-foil. */
+  foil: boolean | null;
   thresholdCents: number;
   configVersion: number;
   lastPriceCents: number | null;

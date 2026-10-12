@@ -34,6 +34,12 @@ describe('priceCard', () => {
     expect(ct.products).toHaveBeenCalledWith(200, { foil: true, language: 'it' });
   });
 
+  it('with foil = null omits the foil parameter', async () => {
+    const ct = fakeCt({});
+    await priceCard(ct, blueprints, { ...anyLang, foil: null });
+    expect(ct.products).toHaveBeenCalledWith(100, { foil: undefined, language: undefined });
+  });
+
   it('no valid listings → no_offers', async () => {
     const ct = fakeCt({ 100: [makeProduct({ blueprint_id: 100, hub: false })] });
     await expect(priceCard(ct, blueprints, anyLang)).resolves.toEqual({ status: 'no_offers' });

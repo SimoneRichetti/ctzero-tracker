@@ -26,6 +26,12 @@ describe('cardInputSchema', () => {
     expect(cardInputSchema.safeParse(valid).success).toBe(true);
   });
 
+  it('accepts foil = null (any finish) but requires the field', () => {
+    expect(cardInputSchema.parse({ ...valid, foil: null }).foil).toBeNull();
+    const { foil: _, ...noFoil } = valid;
+    expect(cardInputSchema.safeParse(noFoil).success).toBe(false);
+  });
+
   it('rejects thresholds below the minimum or non-integer', () => {
     expect(cardInputSchema.safeParse({ ...valid, thresholdCents: 0 }).success).toBe(false);
     expect(cardInputSchema.safeParse({ ...valid, thresholdCents: 10 }).success).toBe(false);

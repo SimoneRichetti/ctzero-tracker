@@ -30,6 +30,11 @@ describe('isValidListing', () => {
     expect(isValidListing(makeProduct({ props: { mtg_foil: undefined } }), filter)).toBe(true);
   });
 
+  it('foil = null accepts both finishes', () => {
+    expect(isValidListing(makeProduct({ props: { mtg_foil: true } }), { ...filter, foil: null })).toBe(true);
+    expect(isValidListing(makeProduct({ props: { mtg_foil: false } }), { ...filter, foil: null })).toBe(true);
+  });
+
   it('filters by language only when specified', () => {
     const it_ = { ...filter, languages: ['it' as const] };
     expect(isValidListing(makeProduct({ props: { mtg_language: 'en' } }), it_)).toBe(false);

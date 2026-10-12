@@ -10,7 +10,8 @@ export const cardFiltersSchema = z.object({
   expansionIds: uniqueArray(z.number().int().positive()),
   languages: languagesSchema,
   minCondition: z.enum(CONDITIONS),
-  foil: z.boolean(),
+  /** null = foil or non-foil. */
+  foil: z.boolean().nullable(),
 });
 export type CardFilters = z.infer<typeof cardFiltersSchema>;
 

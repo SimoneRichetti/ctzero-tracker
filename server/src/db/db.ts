@@ -101,6 +101,12 @@ export const MIGRATIONS: string[] = [
   ALTER TABLE tracked_cards ADD COLUMN group_id INTEGER REFERENCES card_groups(id) ON DELETE SET NULL;
   CREATE INDEX tracked_cards_group ON tracked_cards(group_id);
   `,
+  `
+  ALTER TABLE tracked_cards ADD COLUMN foil_filter INTEGER;
+  UPDATE tracked_cards SET foil_filter = foil;
+  ALTER TABLE tracked_cards DROP COLUMN foil;
+  ALTER TABLE tracked_cards RENAME COLUMN foil_filter TO foil;
+  `,
 ];
 
 export function openDb(path: string): Db {

@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import {
   CONDITIONS,
+  FOIL_OPTIONS,
   LANGUAGES,
   LANGUAGE_LABELS,
   MIN_THRESHOLD_CENTS,
@@ -20,7 +21,6 @@ import InputNumber from 'primevue/inputnumber';
 import Message from 'primevue/message';
 import MultiSelect from 'primevue/multiselect';
 import Select from 'primevue/select';
-import ToggleSwitch from 'primevue/toggleswitch';
 import { computed, ref, watch } from 'vue';
 import { api } from '../api';
 
@@ -34,7 +34,7 @@ const lookup = ref<CardLookupDto | null>(null);
 const expansionIds = ref<number[]>([]);
 const languages = ref<Language[]>([]);
 const minCondition = ref<Condition>('Near Mint');
-const foil = ref(false);
+const foil = ref<boolean | null>(null);
 const preview = ref<PreviewResult | null>(null);
 const groupId = ref<number | null>(null);
 const thresholdEuro = ref<number | null>(null);
@@ -75,7 +75,7 @@ async function reset() {
   expansionIds.value = c ? [...c.expansionIds] : [];
   languages.value = c ? [...c.languages] : [];
   minCondition.value = c?.minCondition ?? 'Near Mint';
-  foil.value = c?.foil ?? false;
+  foil.value = c ? c.foil : null;
   thresholdEuro.value = c ? c.thresholdCents / 100 : null;
   preview.value = null;
   groupId.value = c ? c.groupId : props.defaultGroupId;
@@ -213,9 +213,9 @@ async function save() {
           <label for="condition">Minimum condition</label>
           <Select v-model="minCondition" input-id="condition" :options="conditionOptions" fluid />
         </div>
-        <div class="field inline">
-          <ToggleSwitch v-model="foil" input-id="foil" />
+        <div class="field">
           <label for="foil">Foil</label>
+          <Select v-model="foil" input-id="foil" :options="FOIL_OPTIONS" option-label="label" option-value="value" fluid />
         </div>
       </div>
     </div>
@@ -232,7 +232,7 @@ async function save() {
         <p v-if="preview.listing">
           Current CT Zero price: <strong>{{ formatEuro(preview.listing.priceCents) }}</strong> —
           {{ preview.listing.expansionName }}, {{ preview.listing.condition }},
-          {{ preview.listing.language.toUpperCase() }}
+          {{ preview.listing.language.toUpperCase() }}<template v-if="preview.listing.foil">, foil</template>
           <a :href="preview.listing.url" target="_blank" rel="noopener">open</a>
         </p>
         <p v-else>No valid CT Zero offers right now ({{ preview.blueprintCount }} printings checked).</p>

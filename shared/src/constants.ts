@@ -38,6 +38,13 @@ export const LANGUAGE_LABELS: Record<Language, string> = {
   'zh-TW': 'Traditional Chinese',
 };
 
+/** Choices for the foil filter: null accepts both finishes. */
+export const FOIL_OPTIONS: { label: string; value: boolean | null }[] = [
+  { label: 'Any', value: null },
+  { label: 'Foil only', value: true },
+  { label: 'Non-foil only', value: false },
+];
+
 /** Lowest threshold allowed: CardTrader Zero listings below this are not worth tracking. */
 export const MIN_THRESHOLD_CENTS = 11;
 

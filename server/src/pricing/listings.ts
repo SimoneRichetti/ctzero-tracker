@@ -3,7 +3,8 @@ import type { CtProduct } from '../clients/cardtrader-types';
 
 export interface ListingFilter {
   minCondition: Condition;
-  foil: boolean;
+  /** null = foil or non-foil. */
+  foil: boolean | null;
   /** [] = any language. */
   languages: Language[];
 }
@@ -33,7 +34,7 @@ export function isValidListing(p: CtProduct, f: ListingFilter): boolean {
   if (!isValidBaseListing(p, f.languages)) return false;
   const rank = conditionRank(p.properties_hash.condition);
   if (rank < 0 || rank > conditionRank(f.minCondition)) return false;
-  if (Boolean(p.properties_hash.mtg_foil) !== f.foil) return false;
+  if (f.foil !== null && Boolean(p.properties_hash.mtg_foil) !== f.foil) return false;
   return true;
 }
 

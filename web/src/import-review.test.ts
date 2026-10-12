@@ -67,6 +67,7 @@ describe('buildReviewRows', () => {
   it('foil comes from the line or the default', () => {
     expect(rows[1]!.foil).toBe(true);
     expect(buildReviewRows([a], outcome, percent, true)[0]!.foil).toBe(true);
+    expect(buildReviewRows([a], outcome, percent, null)[0]!.foil).toBeNull();
   });
 
   it('fixed mode includes no-offer cards with the fixed threshold', () => {

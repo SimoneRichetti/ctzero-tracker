@@ -191,7 +191,7 @@ function filterChips(card: TrackedCard): string[] {
     card.expansionNames.length > 0 ? card.expansionNames.join(', ') : 'Any expansion',
     card.languages.length > 0 ? card.languages.map((l) => LANGUAGE_LABELS[l]).join(', ') : 'Any language',
     `≥ ${CONDITION_ABBR[card.minCondition]}`,
-    card.foil ? 'Foil' : 'Non-foil',
+    card.foil === null ? 'Foil or non-foil' : card.foil ? 'Foil' : 'Non-foil',
   ];
 }
 

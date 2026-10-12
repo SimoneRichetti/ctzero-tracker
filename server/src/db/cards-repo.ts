@@ -21,7 +21,7 @@ interface CardRecord {
   expansion_ids: string;
   languages: string;
   min_condition: string;
-  foil: number;
+  foil: number | null;
   threshold_cents: number;
   config_version: number;
   last_price_cents: number | null;
@@ -43,7 +43,7 @@ export interface NewCard {
   expansionIds: number[];
   languages: Language[];
   minCondition: Condition;
-  foil: boolean;
+  foil: boolean | null;
   thresholdCents: number;
   groupId?: number | null;
 }
@@ -97,7 +97,7 @@ function toCard(db: Db, r: CardRecord): TrackedCard {
     expansionNames: expansionIds.length > 0 ? expansionNames(db, r.id) : [],
     languages: JSON.parse(r.languages) as Language[],
     minCondition: r.min_condition as Condition,
-    foil: r.foil === 1,
+    foil: r.foil === null ? null : r.foil === 1,
     thresholdCents: r.threshold_cents,
     configVersion: r.config_version,
     lastPriceCents: r.last_price_cents,
@@ -139,7 +139,7 @@ export function insertCard(db: Db, c: NewCard, now: Date = new Date()): TrackedC
       JSON.stringify(c.expansionIds),
       JSON.stringify(c.languages),
       c.minCondition,
-      c.foil ? 1 : 0,
+      c.foil === null ? null : c.foil ? 1 : 0,
       c.thresholdCents,
       iso,
       iso,

@@ -14,8 +14,8 @@ export type RowStatus = 'ok' | 'tracked' | 'no_offers' | 'not_found' | 'error';
 
 export interface ReviewRow {
   line: DecklistLine;
-  /** Foil used to resolve the line: the line's marker or the import default. */
-  foil: boolean;
+  /** Foil used to resolve the line: the line's marker or the import default (null = any). */
+  foil: boolean | null;
   result: ImportResolveResult | null;
   error: string | null;
   status: RowStatus;
@@ -36,7 +36,7 @@ export function buildReviewRows(
   lines: DecklistLine[],
   outcome: Pick<BatchOutcome<DecklistLine, ImportResolveResult>, 'results' | 'errors'>,
   def: ThresholdChoice,
-  defaultFoil: boolean,
+  defaultFoil: boolean | null,
 ): ReviewRow[] {
   const results = new Map(outcome.results.map((r) => [r.item, r.value]));
   const errors = new Map(outcome.errors.map((e) => [e.item, e]));

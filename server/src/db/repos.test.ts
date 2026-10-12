@@ -1,4 +1,5 @@
 import { mkdtempSync } from 'node:fs';
+import { DatabaseSync } from 'node:sqlite';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { DEFAULT_SETTINGS, type Listing } from '@ctzero/shared';
@@ -67,6 +68,23 @@ describe('openDb', () => {
     expect(user_version).toBe(MIGRATIONS.length);
     again.close();
   });
+
+  it('makes the foil filter nullable, keeping existing values and related rows', () => {
+    const path = join(mkdtempSync(join(tmpdir(), 'ctzero-')), 'test.db');
+    const old = new DatabaseSync(path);
+    for (const m of MIGRATIONS.slice(0, 3)) old.exec(m);
+    old.exec('PRAGMA user_version = 3');
+    old.exec(`INSERT INTO tracked_cards (id, name, scryfall_oracle_id, min_condition, foil, threshold_cents, created_at, updated_at)
+      VALUES (1, 'A', 'oa', 'Near Mint', 1, 100, 'x', 'x'), (2, 'B', 'ob', 'Near Mint', 0, 100, 'x', 'x')`);
+    old.exec(`INSERT INTO card_blueprints VALUES (1, 10, 5, 'Alpha')`);
+    old.close();
+    const migrated = openDb(path);
+    expect(getCard(migrated, 1)!.foil).toBe(true);
+    expect(getCard(migrated, 2)!.foil).toBe(false);
+    expect(getBlueprints(migrated, 1)).toHaveLength(1);
+    expect(updateCard(migrated, 2, { foil: null }).foil).toBeNull();
+    migrated.close();
+  });
 });
 
 describe('cards-repo', () => {
@@ -96,6 +114,11 @@ describe('cards-repo', () => {
     const cleared = updateCard(db, id, { lastPriceCents: null }, t2);
     expect(cleared.lastPriceCents).toBeNull();
     expect(cleared.alertState).toBe('below');
+  });
+
+  it('stores foil = null (any finish)', () => {
+    const card = insertCard(db, { ...newCard, foil: null }, t0);
+    expect(getCard(db, card.id)!.foil).toBeNull();
   });
 
   it('updateCard on a nonexistent id throws NotFoundError', () => {

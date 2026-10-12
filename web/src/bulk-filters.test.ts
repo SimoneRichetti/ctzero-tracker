@@ -23,6 +23,11 @@ describe('filterUpdate', () => {
     });
   });
 
+  it('can set foil to null (any finish)', () => {
+    expect(filterUpdate(card, { foil: null }).foil).toBeNull();
+    expect(filterUpdate({ ...card, foil: null }, {}).foil).toBeNull();
+  });
+
   it('replaces the changed fields', () => {
     expect(filterUpdate(card, { languages: [], minCondition: 'Played' })).toMatchObject({ languages: [], minCondition: 'Played' });
   });

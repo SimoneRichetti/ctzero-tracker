@@ -4,7 +4,7 @@ import type { CardUpdate, Condition, Language, TrackedCard } from '@ctzero/share
 export interface FilterChange {
   languages?: Language[];
   minCondition?: Condition;
-  foil?: boolean;
+  foil?: boolean | null;
 }
 
 /** Full update for one card: expansions and threshold are always the card's own; the group is left untouched. */
@@ -13,7 +13,7 @@ export function filterUpdate(card: TrackedCard, change: FilterChange): CardUpdat
     expansionIds: card.expansionIds,
     languages: change.languages ?? card.languages,
     minCondition: change.minCondition ?? card.minCondition,
-    foil: change.foil ?? card.foil,
+    foil: change.foil !== undefined ? change.foil : card.foil,
     thresholdCents: card.thresholdCents,
   };
 }
