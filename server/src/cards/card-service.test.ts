@@ -1,7 +1,7 @@
 import type { CardBlueprint, CardInput } from '@ctzero/shared';
 import { beforeEach, describe, expect, it, vi, type Mock } from 'vitest';
 import type { CardLookup } from '../catalog/catalog';
-import { getBlueprints, getCard, listCards, listSnapshots } from '../db/cards-repo';
+import { getBlueprints, getCard, insertCard, insertSnapshot, listCards, listSnapshots, updateCard } from '../db/cards-repo';
 import { deleteGroup, insertGroup } from '../db/groups-repo';
 import { openDb, type Db } from '../db/db';
 import { NotFoundError, ValidationError } from '../errors';
@@ -303,5 +303,57 @@ describe('bulk', () => {
     db.exec(`CREATE TRIGGER fail_b BEFORE UPDATE ON tracked_cards WHEN NEW.id = ${b.id} BEGIN SELECT RAISE(ABORT, 'boom'); END`);
     expect(() => service.bulk({ ids: [a.id, b.id], action: { type: 'threshold', mode: 'fixed', cents: 3000 } })).toThrow('boom');
     expect(getCard(db, a.id)?.thresholdCents).toBe(4000);
+  });
+});
+
+describe('list and history', () => {
+  const newCard = {
+    name: 'Ragavan, Nimble Pilferer',
+    scryfallOracleId: 'o1',
+    imageUrl: null,
+    expansionIds: [],
+    languages: [],
+    minCondition: 'Near Mint' as const,
+    foil: false,
+    thresholdCents: 4000,
+  };
+
+  it('list adds the trend of the current configuration', () => {
+    const card = insertCard(db, newCard, t0);
+    const other = insertCard(db, { ...newCard, name: 'Abrade' }, t0);
+    // t0 is 2026-10-02T10:00Z: 10 days earlier is a valid 7-day reference.
+    insertSnapshot(db, { cardId: card.id, configVersion: 1, syncedAt: '2026-09-22T10:00:00.000Z', priceCents: 4000 });
+    insertSnapshot(db, { cardId: card.id, configVersion: 1, syncedAt: t0.toISOString(), priceCents: 3000 });
+    const rows = service.list();
+    expect(rows.find((r) => r.id === card.id)).toEqual({
+      ...getCard(db, card.id),
+      trend: {
+        sparkline: [
+          { t: '2026-09-22T10:00:00.000Z', priceCents: 4000 },
+          { t: t0.toISOString(), priceCents: 3000 },
+        ],
+        change7dPct: -25,
+      },
+    });
+    expect(rows.find((r) => r.id === other.id)?.trend).toEqual({ sparkline: [], change7dPct: null });
+  });
+
+  it('history returns every snapshot with the current threshold and configuration', () => {
+    const card = insertCard(db, newCard, t0);
+    insertSnapshot(db, { cardId: card.id, configVersion: 1, syncedAt: '2026-09-22T10:00:00.000Z', priceCents: 4000 });
+    updateCard(db, card.id, { configVersion: 2 }, t0);
+    insertSnapshot(db, { cardId: card.id, configVersion: 2, syncedAt: t0.toISOString(), priceCents: null });
+    expect(service.history(card.id)).toEqual({
+      thresholdCents: 4000,
+      configVersion: 2,
+      points: [
+        { configVersion: 1, syncedAt: '2026-09-22T10:00:00.000Z', priceCents: 4000 },
+        { configVersion: 2, syncedAt: t0.toISOString(), priceCents: null },
+      ],
+    });
+  });
+
+  it('history of a missing card → NotFoundError', () => {
+    expect(() => service.history(999)).toThrow(NotFoundError);
   });
 });

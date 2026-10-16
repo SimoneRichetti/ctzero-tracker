@@ -17,6 +17,7 @@ import {
   type Expansion,
   type HealthDto,
   type ImportResolveResult,
+  type PriceHistoryDto,
   type SealedProduct,
   type SyncStatusDto,
 } from '@ctzero/shared';
@@ -40,9 +41,9 @@ import type { SyncService } from '../sync/sync-service';
 
 export interface AppDeps {
   db: Db;
-  cards: Pick<CardService, 'list' | 'create' | 'update' | 'delete' | 'preview' | 'bulk'>;
+  cards: Pick<CardService, 'list' | 'create' | 'update' | 'delete' | 'preview' | 'bulk' | 'history'>;
   importer: Pick<ImportService, 'resolve'>;
-  sealed: Pick<SealedService, 'list' | 'create' | 'update' | 'delete' | 'preview'>;
+  sealed: Pick<SealedService, 'list' | 'create' | 'update' | 'delete' | 'preview' | 'history'>;
   sealedCatalog: Pick<SealedCatalog, 'listExpansions' | 'sealedProducts' | 'sealedProduct'>;
   sync: Pick<SyncService, 'start'>;
   scheduler: Pick<Scheduler, 'getNextRunAt' | 'reschedule'>;
@@ -81,6 +82,10 @@ export function buildApp(deps: AppDeps): FastifyInstance {
   });
 
   app.get('/api/cards', async () => deps.cards.list());
+
+  app.get('/api/cards/:id/history', async (req): Promise<PriceHistoryDto> =>
+    deps.cards.history(idParams.parse(req.params).id),
+  );
 
   app.post('/api/cards', async (req, reply) => {
     const card = await deps.cards.create(cardInputSchema.parse(req.body));
@@ -133,6 +138,10 @@ export function buildApp(deps: AppDeps): FastifyInstance {
   });
 
   app.get('/api/sealed', async () => deps.sealed.list());
+
+  app.get('/api/sealed/:id/history', async (req): Promise<PriceHistoryDto> =>
+    deps.sealed.history(idParams.parse(req.params).id),
+  );
 
   app.post('/api/sealed', async (req, reply) => {
     const item = await deps.sealed.create(sealedInputSchema.parse(req.body));

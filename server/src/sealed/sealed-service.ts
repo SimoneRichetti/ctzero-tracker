@@ -1,4 +1,12 @@
-import type { PreviewResult, SealedInput, SealedPreview, SealedUpdate, TrackedSealed } from '@ctzero/shared';
+import type {
+  PreviewResult,
+  PriceHistoryDto,
+  SealedInput,
+  SealedPreview,
+  SealedUpdate,
+  TrackedSealed,
+  TrackedSealedRow,
+} from '@ctzero/shared';
 import { evaluateSilently } from '../alerts/rules';
 import type { SealedCatalog } from '../catalog/sealed-catalog';
 import type { CardTraderClient } from '../clients/cardtrader';
@@ -8,12 +16,15 @@ import {
   getSealed,
   insertSealed,
   insertSealedSnapshot,
+  listRecentSealedSnapshots,
   listSealed,
+  listSealedSnapshots,
   updateSealed,
 } from '../db/sealed-repo';
 import { NotFoundError, errorMessage } from '../errors';
 import { thresholdPresets } from '../pricing/presets';
 import { priceSealed } from '../pricing/sealed-pricer';
+import { computeTrend, trendSince } from '../pricing/trend';
 
 export interface SealedServiceDeps {
   db: Db;
@@ -33,8 +44,21 @@ export class SealedService {
     return this.deps.now?.() ?? new Date();
   }
 
-  list(): TrackedSealed[] {
-    return listSealed(this.deps.db);
+  list(): TrackedSealedRow[] {
+    const { db } = this.deps;
+    const now = this.now();
+    const recent = listRecentSealedSnapshots(db, trendSince(now));
+    return listSealed(db).map((item) => ({
+      ...item,
+      trend: computeTrend(recent.get(item.id) ?? [], item.configVersion, now),
+    }));
+  }
+
+  history(id: number): PriceHistoryDto {
+    const { db } = this.deps;
+    const item = getSealed(db, id);
+    if (!item) throw new NotFoundError('Sealed product not found');
+    return { thresholdCents: item.thresholdCents, configVersion: item.configVersion, points: listSealedSnapshots(db, id) };
   }
 
   async preview(input: SealedPreview): Promise<PreviewResult> {

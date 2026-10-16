@@ -15,6 +15,7 @@ function setup() {
     delete: vi.fn(),
     preview: vi.fn(async () => ({ priceCents: 1000, listing: null, presets: [], blueprintCount: 1 })),
     bulk: vi.fn(() => ({ updated: [1], skipped: [] })),
+    history: vi.fn((_id: number) => ({ thresholdCents: 4000, configVersion: 1, points: [] })),
   };
   const importer = {
     resolve: vi.fn(async () => ({
@@ -53,6 +54,7 @@ function setup() {
     update: vi.fn(async (id: number, input: object) => ({ id, ...input })),
     delete: vi.fn(),
     preview: vi.fn(async () => ({ priceCents: 19000, listing: null, presets: [], blueprintCount: 1 })),
+    history: vi.fn((_id: number) => ({ thresholdCents: 20000, configVersion: 1, points: [] })),
   };
   const sealedCatalog = {
     listExpansions: vi.fn(async () => [{ id: 3627, code: 'mh3', name: 'Modern Horizons 3' }]),
@@ -328,5 +330,35 @@ describe('sealed API', () => {
     const res = await app.inject({ method: 'GET', url: '/api/sealed/resolve?ref=5' });
     expect(res.statusCode).toBe(422);
     expect(res.json()).toEqual({ error: 'CardTrader item 5 is not a sealed product' });
+  });
+});
+
+describe('history API', () => {
+  it('GET /api/cards/:id/history forwards the id', async () => {
+    const { app, cards } = setup();
+    const res = await app.inject({ method: 'GET', url: '/api/cards/5/history' });
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toEqual({ thresholdCents: 4000, configVersion: 1, points: [] });
+    expect(cards.history).toHaveBeenCalledWith(5);
+  });
+
+  it('GET /api/sealed/:id/history forwards the id', async () => {
+    const { app, sealed } = setup();
+    const res = await app.inject({ method: 'GET', url: '/api/sealed/3/history' });
+    expect(res.statusCode).toBe(200);
+    expect(sealed.history).toHaveBeenCalledWith(3);
+  });
+
+  it('unknown id → 404, invalid id → 400', async () => {
+    const { app, cards, sealed } = setup();
+    cards.history.mockImplementationOnce(() => {
+      throw new NotFoundError('Card not found');
+    });
+    sealed.history.mockImplementationOnce(() => {
+      throw new NotFoundError('Sealed product not found');
+    });
+    expect((await app.inject({ method: 'GET', url: '/api/cards/9/history' })).statusCode).toBe(404);
+    expect((await app.inject({ method: 'GET', url: '/api/sealed/9/history' })).statusCode).toBe(404);
+    expect((await app.inject({ method: 'GET', url: '/api/cards/abc/history' })).statusCode).toBe(400);
   });
 });

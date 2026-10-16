@@ -21,6 +21,7 @@ Tracks the minimum **CardTrader Zero** price of Magic cards and sealed products 
 - Thresholds can't go below €0.11 (percent-based ones and suggested presets are raised to that minimum).
 - **Groups**: on the Cards page, "Manage groups" creates, renames and deletes groups (deleting a group keeps its cards). Pick a group from the selector to see only its cards with totals; tick cards to change threshold, filters or group, or delete them, all at once.
 - **Import list**: "Import list" on the Cards page accepts a pasted decklist (Moxfield, Archidekt, MTG Arena or one name per line, up to 250 cards). Prices are checked one card at a time, then you review thresholds and add the cards to a new group, an existing one or no group. Keep the tab open while it runs.
+- **Price history**: the Trend column on the Cards and Sealed pages shows the last 30 days and the change over 7 days (only prices with the current filters). The chart button (or a click on the sparkline) opens the full history, with the current threshold and a marker where the filters were changed.
 
 ## Docker
 - `docker compose up -d --build` → builds the image and starts the container on http://localhost:3000

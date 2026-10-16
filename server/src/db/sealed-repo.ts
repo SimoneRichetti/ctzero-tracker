@@ -1,6 +1,6 @@
 import type { AlertState, Language, Listing, SyncStatus, TrackedSealed } from '@ctzero/shared';
 import { NotFoundError } from '../errors';
-import type { Snapshot } from './cards-repo';
+import { groupSnapshots, type Snapshot } from './cards-repo';
 import type { Db } from './db';
 
 type SqlValue = string | number | null;
@@ -148,4 +148,19 @@ export function listSealedSnapshots(db: Db, sealedId: number): Snapshot[] {
        FROM sealed_price_snapshots WHERE tracked_sealed_id = ? ORDER BY id`,
     )
     .all(sealedId) as unknown as Snapshot[];
+}
+
+/** Snapshots since `sinceIso` of each product's current configuration, oldest first, keyed by product id. */
+export function listRecentSealedSnapshots(db: Db, sinceIso: string): Map<number, Snapshot[]> {
+  const rows = db
+    .prepare(
+      `SELECT s.tracked_sealed_id AS ownerId, s.config_version AS configVersion, s.synced_at AS syncedAt,
+              s.price_cents AS priceCents
+       FROM sealed_price_snapshots s
+       JOIN tracked_sealed t ON t.id = s.tracked_sealed_id AND t.config_version = s.config_version
+       WHERE s.synced_at >= ?
+       ORDER BY s.id`,
+    )
+    .all(sinceIso) as unknown as (Snapshot & { ownerId: number })[];
+  return groupSnapshots(rows);
 }

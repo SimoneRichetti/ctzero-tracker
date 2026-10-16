@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { CONDITION_ABBR, LANGUAGE_LABELS, formatEuro, type BulkResult, type CardGroup, type TrackedCard } from '@ctzero/shared';
+import { CONDITION_ABBR, LANGUAGE_LABELS, formatEuro, type BulkResult, type CardGroup, type TrackedCard, type TrackedCardRow } from '@ctzero/shared';
 import Button from 'primevue/button';
 import Column from 'primevue/column';
 import DataTable from 'primevue/datatable';
@@ -17,12 +17,15 @@ import BulkGroupDialog from '../components/BulkGroupDialog.vue';
 import BulkThresholdDialog from '../components/BulkThresholdDialog.vue';
 import CardDialog from '../components/CardDialog.vue';
 import GroupsDialog from '../components/GroupsDialog.vue';
+import PriceHistoryDialog from '../components/PriceHistoryDialog.vue';
+import PriceSparkline from '../components/PriceSparkline.vue';
 import SyncHeader from '../components/SyncHeader.vue';
 import { filterByGroup, groupFilterQuery, parseGroupFilter, summarize, type GroupFilter } from '../group-summary';
+import { formatChange } from '../price-history';
 
 const toast = useToast();
 const confirm = useConfirm();
-const cards = ref<TrackedCard[]>([]);
+const cards = ref<TrackedCardRow[]>([]);
 const loading = ref(false);
 const dialogVisible = ref(false);
 const editing = ref<TrackedCard | null>(null);
@@ -75,7 +78,7 @@ async function load() {
   // Loaded on their own: a failure on groups must not leave the card list empty.
   const groupsLoaded = loadGroups();
   try {
-    cards.value = await api.get<TrackedCard[]>('/api/cards');
+    cards.value = await api.get<TrackedCardRow[]>('/api/cards');
     // Re-derive the selection from fresh data: drops deleted cards and avoids stale snapshots.
     selected.value = cards.value.filter((c) => selected.value.some((s) => s.id === c.id));
   } catch (e) {
@@ -94,6 +97,14 @@ function openNew() {
 function openEdit(card: TrackedCard) {
   editing.value = card;
   dialogVisible.value = true;
+}
+
+const historyVisible = ref(false);
+const historyTarget = ref<{ id: number; name: string } | null>(null);
+
+function openHistory(card: TrackedCard) {
+  historyTarget.value = { id: card.id, name: card.name };
+  historyVisible.value = true;
 }
 
 function onSaved(card: TrackedCard) {
@@ -286,6 +297,16 @@ onMounted(load);
         <span v-else>—</span>
       </template>
     </Column>
+    <Column header="Trend">
+      <template #body="{ data }">
+        <div class="trend-cell">
+          <PriceSparkline :points="data.trend.sparkline" @click="openHistory(data)" />
+          <span v-tooltip.top="'Change over 7 days'" :class="formatChange(data.trend.change7dPct).cls">
+            {{ formatChange(data.trend.change7dPct).text }}
+          </span>
+        </div>
+      </template>
+    </Column>
     <Column header="Threshold">
       <template #body="{ data }">{{ formatEuro(data.thresholdCents) }}</template>
     </Column>
@@ -306,12 +327,13 @@ onMounted(load);
     <Column header="Updated">
       <template #body="{ data }">{{ formatDateTime(data.lastSyncedAt) }}</template>
     </Column>
-    <Column header="" style="width: 9rem">
+    <Column header="" style="width: 11rem">
       <template #body="{ data }">
         <div class="row-actions">
           <a v-if="data.lastListing" :href="data.lastListing.url" target="_blank" rel="noopener">
             <Button v-tooltip.top="'Open on CardTrader'" icon="pi pi-external-link" text rounded />
           </a>
+          <Button v-tooltip.top="'Price history'" icon="pi pi-chart-line" text rounded @click="openHistory(data)" />
           <Button v-tooltip.top="'Edit'" icon="pi pi-pencil" text rounded @click="openEdit(data)" />
           <Button
             v-tooltip.top="'Delete'"
@@ -334,6 +356,12 @@ onMounted(load);
     @saved="onSaved"
   />
   <GroupsDialog v-model:visible="groupsDialogVisible" :groups="groups" @changed="load" />
+  <PriceHistoryDialog
+    v-model:visible="historyVisible"
+    kind="card"
+    :id="historyTarget?.id ?? null"
+    :name="historyTarget?.name ?? ''"
+  />
 
   <BulkThresholdDialog v-model:visible="thresholdVisible" :cards="selected" @done="onBulkDone" />
   <BulkGroupDialog

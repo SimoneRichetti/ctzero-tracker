@@ -140,6 +140,33 @@ export interface TrackedSealed {
   updatedAt: string;
 }
 
+/** Recent price trend of a tracked item, current filter configuration only. */
+export interface PriceTrend {
+  /** Snapshots with a price from the last 30 days, oldest first. */
+  sparkline: { t: string; priceCents: number }[];
+  /** % change (one decimal) between the latest snapshot and the one ~7 days earlier; null if unknown. */
+  change7dPct: number | null;
+}
+
+export type TrackedCardRow = TrackedCard & { trend: PriceTrend };
+export type TrackedSealedRow = TrackedSealed & { trend: PriceTrend };
+
+export interface PricePoint {
+  syncedAt: string;
+  /** null = no offers at that time. */
+  priceCents: number | null;
+  configVersion: number;
+}
+
+export interface PriceHistoryDto {
+  /** Current threshold (the history does not record past thresholds). */
+  thresholdCents: number;
+  /** Current filter configuration. */
+  configVersion: number;
+  /** All snapshots, oldest first. */
+  points: PricePoint[];
+}
+
 export interface SyncRun {
   id: number;
   trigger: SyncTrigger;

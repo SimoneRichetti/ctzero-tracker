@@ -7,7 +7,9 @@ import {
   type CardInput,
   type CardUpdate,
   type PreviewResult,
+  type PriceHistoryDto,
   type TrackedCard,
+  type TrackedCardRow,
 } from '@ctzero/shared';
 import { evaluateSilently } from '../alerts/rules';
 import type { Catalog } from '../catalog/catalog';
@@ -18,6 +20,8 @@ import {
   insertCard,
   insertSnapshot,
   listCards,
+  listRecentSnapshotsByCard,
+  listSnapshots,
   replaceBlueprints,
   updateCard,
 } from '../db/cards-repo';
@@ -26,6 +30,7 @@ import { getGroup } from '../db/groups-repo';
 import { NotFoundError, ValidationError, errorMessage } from '../errors';
 import { priceCard } from '../pricing/card-pricer';
 import { thresholdPresets } from '../pricing/presets';
+import { computeTrend, trendSince } from '../pricing/trend';
 
 export interface CardServiceDeps {
   db: Db;
@@ -59,8 +64,21 @@ export class CardService {
     if (groupId != null && !getGroup(this.deps.db, groupId)) throw new ValidationError('Group not found');
   }
 
-  list(): TrackedCard[] {
-    return listCards(this.deps.db);
+  list(): TrackedCardRow[] {
+    const { db } = this.deps;
+    const now = this.now();
+    const recent = listRecentSnapshotsByCard(db, trendSince(now));
+    return listCards(db).map((card) => ({
+      ...card,
+      trend: computeTrend(recent.get(card.id) ?? [], card.configVersion, now),
+    }));
+  }
+
+  history(id: number): PriceHistoryDto {
+    const { db } = this.deps;
+    const card = getCard(db, id);
+    if (!card) throw new NotFoundError('Card not found');
+    return { thresholdCents: card.thresholdCents, configVersion: card.configVersion, points: listSnapshots(db, id) };
   }
 
   async preview(f: CardFilters): Promise<PreviewResult> {

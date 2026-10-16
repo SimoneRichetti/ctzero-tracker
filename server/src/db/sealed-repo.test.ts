@@ -12,6 +12,7 @@ import {
   getSealed,
   insertSealed,
   insertSealedSnapshot,
+  listRecentSealedSnapshots,
   listSealed,
   listSealedSnapshots,
   updateSealed,
@@ -47,6 +48,22 @@ beforeEach(() => {
 });
 
 describe('sealed-repo', () => {
+  it('listRecentSealedSnapshots keeps recent snapshots of the current configuration, grouped by product', () => {
+    const a = insertSealed(db, box, t0);
+    const b = insertSealed(db, { ...box, name: 'Bloomburrow: Play Booster Box' }, t0);
+    updateSealed(db, b.id, { configVersion: 2 }, t0);
+    insertSealedSnapshot(db, { sealedId: a.id, configVersion: 1, syncedAt: '2026-09-01T00:00:00.000Z', priceCents: 18000 });
+    insertSealedSnapshot(db, { sealedId: a.id, configVersion: 1, syncedAt: t0.toISOString(), priceCents: 19000 });
+    insertSealedSnapshot(db, { sealedId: b.id, configVersion: 1, syncedAt: t0.toISOString(), priceCents: 15000 });
+    insertSealedSnapshot(db, { sealedId: b.id, configVersion: 2, syncedAt: t1.toISOString(), priceCents: null });
+    expect(listRecentSealedSnapshots(db, '2026-10-01T00:00:00.000Z')).toEqual(
+      new Map([
+        [a.id, [{ configVersion: 1, syncedAt: t0.toISOString(), priceCents: 19000 }]],
+        [b.id, [{ configVersion: 2, syncedAt: t1.toISOString(), priceCents: null }]],
+      ]),
+    );
+  });
+
   it('inserts with defaults and reads back', () => {
     const s = insertSealed(db, box, t0);
     expect(s).toEqual({

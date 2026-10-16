@@ -13,6 +13,7 @@ import {
   insertCard,
   insertSnapshot,
   listCards,
+  listRecentSnapshotsByCard,
   listSnapshots,
   replaceBlueprints,
   updateCard,
@@ -165,6 +166,29 @@ describe('cards-repo', () => {
     const { id } = insertCard(db, newCard, t0);
     insertSnapshot(db, { cardId: id, configVersion: 2, syncedAt: t0.toISOString(), priceCents: null });
     expect(listSnapshots(db, id)).toEqual([{ configVersion: 2, syncedAt: t0.toISOString(), priceCents: null }]);
+  });
+
+  it('listRecentSnapshotsByCard keeps recent snapshots of the current configuration, grouped by card', () => {
+    const a = insertCard(db, newCard, t0);
+    const b = insertCard(db, { ...newCard, name: 'Abrade' }, t0);
+    updateCard(db, b.id, { configVersion: 2 }, t0);
+    insertSnapshot(db, { cardId: a.id, configVersion: 1, syncedAt: '2026-09-01T00:00:00.000Z', priceCents: 90 });
+    insertSnapshot(db, { cardId: a.id, configVersion: 1, syncedAt: t0.toISOString(), priceCents: 100 });
+    insertSnapshot(db, { cardId: b.id, configVersion: 1, syncedAt: t0.toISOString(), priceCents: 500 });
+    insertSnapshot(db, { cardId: a.id, configVersion: 1, syncedAt: t1.toISOString(), priceCents: null });
+    insertSnapshot(db, { cardId: b.id, configVersion: 2, syncedAt: t1.toISOString(), priceCents: 400 });
+    expect(listRecentSnapshotsByCard(db, '2026-10-01T00:00:00.000Z')).toEqual(
+      new Map([
+        [
+          a.id,
+          [
+            { configVersion: 1, syncedAt: t0.toISOString(), priceCents: 100 },
+            { configVersion: 1, syncedAt: t1.toISOString(), priceCents: null },
+          ],
+        ],
+        [b.id, [{ configVersion: 2, syncedAt: t1.toISOString(), priceCents: 400 }]],
+      ]),
+    );
   });
 
   it('cardExistsByOracleId', () => {

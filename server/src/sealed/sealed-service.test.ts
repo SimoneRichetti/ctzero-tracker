@@ -2,7 +2,7 @@ import type { SealedInput, SealedProduct } from '@ctzero/shared';
 import { beforeEach, describe, expect, it, vi, type Mock } from 'vitest';
 import { HttpError } from '../clients/http';
 import { openDb, type Db } from '../db/db';
-import { getSealed, listSealedSnapshots } from '../db/sealed-repo';
+import { getSealed, insertSealed, insertSealedSnapshot, listSealedSnapshots, updateSealed } from '../db/sealed-repo';
 import { NotFoundError, ValidationError } from '../errors';
 import { makeProduct } from '../test-utils';
 import { SealedService } from './sealed-service';
@@ -177,5 +177,43 @@ describe('preview and delete', () => {
     service.delete(s.id);
     expect(getSealed(db, s.id)).toBeNull();
     expect(() => service.delete(s.id)).toThrow(NotFoundError);
+  });
+});
+
+describe('list and history', () => {
+  const newSealed = { ...product, languages: ['en' as const], thresholdCents: 20000 };
+
+  it('list adds the trend of the current configuration', () => {
+    const item = insertSealed(db, newSealed, t0);
+    // t0 is 2026-10-07T10:00Z.
+    insertSealedSnapshot(db, { sealedId: item.id, configVersion: 1, syncedAt: '2026-09-27T10:00:00.000Z', priceCents: 20000 });
+    insertSealedSnapshot(db, { sealedId: item.id, configVersion: 1, syncedAt: t0.toISOString(), priceCents: 19000 });
+    expect(service.list()).toEqual([
+      {
+        ...getSealed(db, item.id),
+        trend: {
+          sparkline: [
+            { t: '2026-09-27T10:00:00.000Z', priceCents: 20000 },
+            { t: t0.toISOString(), priceCents: 19000 },
+          ],
+          change7dPct: -5,
+        },
+      },
+    ]);
+  });
+
+  it('history returns every snapshot with the current threshold and configuration', () => {
+    const item = insertSealed(db, newSealed, t0);
+    insertSealedSnapshot(db, { sealedId: item.id, configVersion: 1, syncedAt: '2026-09-27T10:00:00.000Z', priceCents: 20000 });
+    updateSealed(db, item.id, { configVersion: 2 }, t0);
+    expect(service.history(item.id)).toEqual({
+      thresholdCents: 20000,
+      configVersion: 2,
+      points: [{ configVersion: 1, syncedAt: '2026-09-27T10:00:00.000Z', priceCents: 20000 }],
+    });
+  });
+
+  it('history of a missing product → NotFoundError', () => {
+    expect(() => service.history(999)).toThrow(NotFoundError);
   });
 });

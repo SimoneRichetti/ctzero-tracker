@@ -206,3 +206,29 @@ export function listSnapshots(db: Db, cardId: number): Snapshot[] {
     )
     .all(cardId) as unknown as Snapshot[];
 }
+
+/** Groups snapshot rows (oldest first) by the id of the item they belong to. */
+export function groupSnapshots(rows: (Snapshot & { ownerId: number })[]): Map<number, Snapshot[]> {
+  const byOwner = new Map<number, Snapshot[]>();
+  for (const { ownerId, configVersion, syncedAt, priceCents } of rows) {
+    const list = byOwner.get(ownerId) ?? [];
+    list.push({ configVersion, syncedAt, priceCents });
+    byOwner.set(ownerId, list);
+  }
+  return byOwner;
+}
+
+/** Snapshots since `sinceIso` of each card's current configuration, oldest first, keyed by card id. */
+export function listRecentSnapshotsByCard(db: Db, sinceIso: string): Map<number, Snapshot[]> {
+  const rows = db
+    .prepare(
+      `SELECT s.tracked_card_id AS ownerId, s.config_version AS configVersion, s.synced_at AS syncedAt,
+              s.price_cents AS priceCents
+       FROM price_snapshots s
+       JOIN tracked_cards c ON c.id = s.tracked_card_id AND c.config_version = s.config_version
+       WHERE s.synced_at >= ?
+       ORDER BY s.id`,
+    )
+    .all(sinceIso) as unknown as (Snapshot & { ownerId: number })[];
+  return groupSnapshots(rows);
+}

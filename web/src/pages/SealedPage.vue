@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { LANGUAGE_LABELS, formatEuro, type TrackedSealed } from '@ctzero/shared';
+import { LANGUAGE_LABELS, formatEuro, type TrackedSealed, type TrackedSealedRow } from '@ctzero/shared';
 import Button from 'primevue/button';
 import Column from 'primevue/column';
 import DataTable from 'primevue/datatable';
@@ -9,12 +9,15 @@ import { useToast } from 'primevue/usetoast';
 import { computed, onMounted, ref } from 'vue';
 import { api } from '../api';
 import { STATUS_META, cardStatus, deltaPercent, formatDateTime, sortForDisplay } from '../card-status';
+import PriceHistoryDialog from '../components/PriceHistoryDialog.vue';
+import PriceSparkline from '../components/PriceSparkline.vue';
 import SealedDialog from '../components/SealedDialog.vue';
 import SyncHeader from '../components/SyncHeader.vue';
+import { formatChange } from '../price-history';
 
 const toast = useToast();
 const confirm = useConfirm();
-const items = ref<TrackedSealed[]>([]);
+const items = ref<TrackedSealedRow[]>([]);
 const loading = ref(false);
 const dialogVisible = ref(false);
 const editing = ref<TrackedSealed | null>(null);
@@ -46,7 +49,7 @@ function hidePreview() {
 async function load() {
   loading.value = true;
   try {
-    items.value = await api.get<TrackedSealed[]>('/api/sealed');
+    items.value = await api.get<TrackedSealedRow[]>('/api/sealed');
   } catch (e) {
     toast.add({ severity: 'error', summary: 'Error', detail: (e as Error).message, life: 5000 });
   } finally {
@@ -62,6 +65,14 @@ function openNew() {
 function openEdit(item: TrackedSealed) {
   editing.value = item;
   dialogVisible.value = true;
+}
+
+const historyVisible = ref(false);
+const historyTarget = ref<{ id: number; name: string } | null>(null);
+
+function openHistory(item: TrackedSealed) {
+  historyTarget.value = { id: item.id, name: item.name };
+  historyVisible.value = true;
 }
 
 function onSaved(item: TrackedSealed) {
@@ -143,6 +154,16 @@ onMounted(load);
         <span v-else>—</span>
       </template>
     </Column>
+    <Column header="Trend">
+      <template #body="{ data }">
+        <div class="trend-cell">
+          <PriceSparkline :points="data.trend.sparkline" @click="openHistory(data)" />
+          <span v-tooltip.top="'Change over 7 days'" :class="formatChange(data.trend.change7dPct).cls">
+            {{ formatChange(data.trend.change7dPct).text }}
+          </span>
+        </div>
+      </template>
+    </Column>
     <Column header="Threshold">
       <template #body="{ data }">{{ formatEuro(data.thresholdCents) }}</template>
     </Column>
@@ -163,12 +184,13 @@ onMounted(load);
     <Column header="Updated">
       <template #body="{ data }">{{ formatDateTime(data.lastSyncedAt) }}</template>
     </Column>
-    <Column header="" style="width: 9rem">
+    <Column header="" style="width: 11rem">
       <template #body="{ data }">
         <div class="row-actions">
           <a :href="`https://www.cardtrader.com/cards/${data.blueprintId}`" target="_blank" rel="noopener">
             <Button v-tooltip.top="'Open on CardTrader'" icon="pi pi-external-link" text rounded />
           </a>
+          <Button v-tooltip.top="'Price history'" icon="pi pi-chart-line" text rounded @click="openHistory(data)" />
           <Button v-tooltip.top="'Edit'" icon="pi pi-pencil" text rounded @click="openEdit(data)" />
           <Button
             v-tooltip.top="'Delete'"
@@ -184,6 +206,12 @@ onMounted(load);
   </DataTable>
 
   <SealedDialog v-model:visible="dialogVisible" :item="editing" @saved="onSaved" />
+  <PriceHistoryDialog
+    v-model:visible="historyVisible"
+    kind="sealed"
+    :id="historyTarget?.id ?? null"
+    :name="historyTarget?.name ?? ''"
+  />
 
   <Teleport to="body">
     <img
