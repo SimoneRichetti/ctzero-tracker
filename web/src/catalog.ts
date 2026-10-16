@@ -12,8 +12,8 @@ const cards = ref<TrackedCardRow[]>([]);
 const sealed = ref<TrackedSealedRow[]>([]);
 const groups = ref<CardGroup[]>([]);
 const health = ref<HealthDto | null>(null);
-const loading = reactive({ cards: false, sealed: false });
-/** True once the first load of each list is done, so the pages can tell "empty" from "not loaded yet". */
+const loading = reactive({ cards: false, sealed: false, groups: false });
+/** True once a load of each list has succeeded, so the pages can tell "empty" from "not loaded (yet)". */
 const loaded = reactive({ cards: false, sealed: false, groups: false });
 
 let onError: (message: string) => void = () => {};
@@ -29,17 +29,18 @@ type ListKey = keyof typeof requests;
 /** Fetches one list; a response overtaken by a newer reload of the same list is dropped. */
 async function load<T>(key: ListKey, path: string, assign: (data: T) => void) {
   const isLatest = requests[key].start();
-  if (key !== 'groups') loading[key] = true;
+  loading[key] = true;
   try {
     const data = await api.get<T>(path);
-    if (isLatest()) assign(data);
-  } catch (e) {
-    if (isLatest()) onError((e as Error).message);
-  } finally {
     if (isLatest()) {
-      if (key !== 'groups') loading[key] = false;
+      assign(data);
       loaded[key] = true;
     }
+  } catch (e) {
+    // A failed load keeps the previous data and does not count as loaded.
+    if (isLatest()) onError((e as Error).message);
+  } finally {
+    if (isLatest()) loading[key] = false;
   }
 }
 

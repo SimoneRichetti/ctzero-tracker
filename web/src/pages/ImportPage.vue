@@ -83,7 +83,7 @@ const groupMode = ref<'new' | 'existing' | 'none'>('new');
 const newGroupName = ref('');
 const existingGroupId = ref<number | null>(null);
 const route = useRoute();
-const { groups, reloadCardsAndGroups, reloadGroups } = useCatalog();
+const { groups, loaded, reloadCardsAndGroups, reloadGroups } = useCatalog();
 
 const step = ref<Step>('input');
 const progress = ref({ done: 0, total: 0 });
@@ -120,9 +120,14 @@ if (Number.isInteger(presetGroupId) && presetGroupId > 0) {
   groupMode.value = 'existing';
   existingGroupId.value = presetGroupId;
 }
-watch(groups, (list) => {
-  if (existingGroupId.value !== null && !list.some((g) => g.id === existingGroupId.value)) existingGroupId.value = null;
-});
+// A stale `?group=` (or a group deleted meanwhile) must not be sent with the new cards.
+watch(
+  [groups, () => loaded.groups],
+  ([list, isLoaded]) => {
+    if (isLoaded && existingGroupId.value !== null && !list.some((g) => g.id === existingGroupId.value)) existingGroupId.value = null;
+  },
+  { immediate: true },
+);
 
 const stepIndex = computed(() => STEPS.findIndex((s) => s.steps.includes(step.value)));
 

@@ -93,7 +93,7 @@ export function useTheme() {
       // private window or blocked storage: the choice lasts until the page is closed
     }
   }
-  return { isDark, toggle, apply: () => apply(isDark.value) };
+  return { isDark, toggle };
 }
 
 /** Reads an app token (`--ct-*`) for canvas drawing; `isDark` is read so callers recompute on a theme switch. */

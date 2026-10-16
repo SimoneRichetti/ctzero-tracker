@@ -6,7 +6,7 @@ import Menu from 'primevue/menu';
 import { useConfirm } from 'primevue/useconfirm';
 import { useToast } from 'primevue/usetoast';
 import { computed, nextTick, ref, watch } from 'vue';
-import { useRoute, useRouter } from 'vue-router';
+import { useRouter } from 'vue-router';
 import { api } from '../api';
 import { BulkStoppedError, bulkCards } from '../bulk-cards';
 import { useCatalog } from '../catalog';
@@ -18,13 +18,13 @@ import CardDialog from '../components/CardDialog.vue';
 import ItemDrawer from '../components/ItemDrawer.vue';
 import TrackedList from '../components/TrackedList.vue';
 import { filterByGroup, parseGroupFilter } from '../group-summary';
+import { useOpenItem } from '../open-item';
 
 /** 'all', 'none' (ungrouped) or a group id from `/groups/:id`. */
 const props = defineProps<{ scope: string }>();
 
 const toast = useToast();
 const confirm = useConfirm();
-const route = useRoute();
 const router = useRouter();
 const { cards, groups, groupNames, loading, loaded, reloadCardsAndGroups, reloadGroups } = useCatalog();
 
@@ -37,11 +37,13 @@ const groupFilter = computed(() =>
 const group = computed(() => (typeof groupFilter.value === 'number' ? groups.value.find((g) => g.id === groupFilter.value) ?? null : null));
 const items = computed(() => filterByGroup(cards.value, groupFilter.value));
 
-// A group that does not exist (deleted, maybe from another tab) sends back to all cards.
+// A group that does not exist (deleted, maybe from another tab) sends back to all cards. Not while the
+// groups are reloading: a group created a moment ago (sidebar, import) may not be in the list yet.
 watch(
-  [() => props.scope, () => loaded.groups, groups],
+  [() => props.scope, () => loaded.groups, () => loading.groups, groups],
   () => {
-    if (loaded.groups && props.scope !== 'all' && props.scope !== 'none' && groupFilter.value === 'all') void router.replace('/cards');
+    const unknownGroup = props.scope !== 'all' && props.scope !== 'none' && groupFilter.value === 'all';
+    if (unknownGroup && loaded.groups && !loading.groups) void router.replace('/cards');
   },
   { immediate: true },
 );
@@ -57,23 +59,7 @@ const emptyText = computed(() =>
 );
 
 // ---------- detail panel (?item=) ----------
-const openId = computed(() => {
-  const raw = Number(route.query.item);
-  return Number.isInteger(raw) && raw > 0 ? raw : null;
-});
-const openItem = computed(() => cards.value.find((c) => c.id === openId.value) ?? null);
-watch([openId, () => loaded.cards, cards], () => {
-  if (openId.value !== null && loaded.cards && !openItem.value) closeItem();
-});
-
-function openCard(id: number) {
-  void router.replace({ query: { ...route.query, item: String(id) } });
-}
-
-function closeItem() {
-  const { item: _item, ...rest } = route.query;
-  void router.replace({ query: rest });
-}
+const { openId, openItem, open: openCard, close: closeItem } = useOpenItem(cards, () => loaded.cards);
 
 function onSaved(card: TrackedCard) {
   toast.add({ severity: 'success', summary: `${card.name} saved`, life: 3000 });

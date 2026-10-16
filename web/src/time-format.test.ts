@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { formatAt, formatClock, formatDay, formatWhen } from './time-format';
+import { formatAt, formatClock, dayLabel, formatWhen } from './time-format';
 
 // Local times, so the tests do not depend on the machine's time zone.
 const now = new Date(2026, 9, 16, 15, 30);
@@ -11,10 +11,10 @@ describe('time formatting', () => {
   });
 
   it('relative day names, then a short date', () => {
-    expect(formatDay(at(16, 0, 1), now)).toBe('Today');
-    expect(formatDay(at(15, 23, 59), now)).toBe('Yesterday');
-    expect(formatDay(at(17, 8, 0), now)).toBe('Tomorrow');
-    expect(formatDay(at(12, 8, 0), now)).toBe('Oct 12');
+    expect(dayLabel(at(16, 0, 1), now)).toBe('Today');
+    expect(dayLabel(at(15, 23, 59), now)).toBe('Yesterday');
+    expect(dayLabel(at(17, 8, 0), now)).toBe('Tomorrow');
+    expect(dayLabel(at(12, 8, 0), now)).toBe('Oct 12');
   });
 
   it('only the clock for today', () => {

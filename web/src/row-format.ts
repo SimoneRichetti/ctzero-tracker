@@ -1,4 +1,4 @@
-import { CONDITION_ABBR, formatEuro, type TrackedCard, type TrackedSealed } from '@ctzero/shared';
+import { CONDITION_ABBR, formatEuro, type Condition, type Listing, type TrackedCard, type TrackedSealed } from '@ctzero/shared';
 import type { PricedItem } from './card-status';
 
 function languageList(codes: string[]): string {
@@ -56,4 +56,25 @@ export function formatChange(pct: number | null): { text: string; tone: ChangeTo
   if (pct === null) return { text: '—', tone: 'none' };
   if (pct === 0) return { text: '0.0%', tone: 'flat' };
   return { text: `${pct < 0 ? '↓' : '↑'} ${Math.abs(pct).toFixed(1)}%`, tone: pct < 0 ? 'down' : 'up' };
+}
+
+export type ItemKind = 'card' | 'sealed';
+
+/** The listing that set the current price, e.g. "Modern Horizons 2 · NM · EN · Foil"; sealed products only show the language. */
+export function listingLine(kind: ItemKind, listing: Listing | null): string | null {
+  if (!listing) return null;
+  if (kind === 'sealed') return listing.language ? listing.language.toUpperCase() : null;
+  const condition = CONDITION_ABBR[listing.condition as Condition] ?? listing.condition;
+  return [listing.expansionName, condition, listing.language.toUpperCase(), listing.foil ? 'Foil' : null].filter(Boolean).join(' · ');
+}
+
+/** Stored images are small thumbnails: Scryfall "small" → "normal", CardTrader "preview_" → "show_". */
+export function largeImageUrl(kind: ItemKind, url: string): string {
+  return kind === 'card' ? url.replace('/small/', '/normal/') : url.replace('/preview_', '/show_');
+}
+
+/** The listing on CardTrader, else the product page for sealed (one blueprint) or the site for cards (many printings). */
+export function cardTraderUrl(item: { lastListing: Listing | null; blueprintId?: number }): string {
+  if (item.lastListing) return item.lastListing.url;
+  return item.blueprintId !== undefined ? `https://www.cardtrader.com/cards/${item.blueprintId}` : 'https://www.cardtrader.com';
 }

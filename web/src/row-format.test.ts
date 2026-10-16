@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { cardMetaLine, formatChange, gapSentence, sealedMetaLine, targetGap } from './row-format';
+import type { Listing } from '@ctzero/shared';
+import { cardMetaLine, cardTraderUrl, formatChange, gapSentence, largeImageUrl, listingLine, sealedMetaLine, targetGap } from './row-format';
 
 describe('cardMetaLine', () => {
   it('describes the matching rules', () => {
@@ -63,5 +64,40 @@ describe('formatChange', () => {
     expect(formatChange(5)).toEqual({ text: '↑ 5.0%', tone: 'up' });
     expect(formatChange(0)).toEqual({ text: '0.0%', tone: 'flat' });
     expect(formatChange(null)).toEqual({ text: '—', tone: 'none' });
+  });
+});
+
+const listing: Listing = {
+  productId: 1,
+  blueprintId: 2,
+  expansionName: 'Modern Horizons 2',
+  condition: 'Near Mint',
+  language: 'en',
+  foil: true,
+  priceCents: 100,
+  url: 'https://www.cardtrader.com/x',
+};
+
+describe('listingLine', () => {
+  it('abbreviated condition for cards, language only for sealed', () => {
+    expect(listingLine('card', listing)).toBe('Modern Horizons 2 · NM · EN · Foil');
+    expect(listingLine('card', { ...listing, foil: false, condition: 'Odd' })).toBe('Modern Horizons 2 · Odd · EN');
+    expect(listingLine('sealed', listing)).toBe('EN');
+    expect(listingLine('card', null)).toBeNull();
+  });
+});
+
+describe('largeImageUrl', () => {
+  it('swaps the thumbnail for the larger image', () => {
+    expect(largeImageUrl('card', 'https://cards.scryfall.io/small/front/a.jpg')).toBe('https://cards.scryfall.io/normal/front/a.jpg');
+    expect(largeImageUrl('sealed', 'https://cardtrader.com/uploads/preview_a.jpg')).toBe('https://cardtrader.com/uploads/show_a.jpg');
+  });
+});
+
+describe('cardTraderUrl', () => {
+  it('listing first, then the sealed product page, then the site', () => {
+    expect(cardTraderUrl({ lastListing: listing })).toBe('https://www.cardtrader.com/x');
+    expect(cardTraderUrl({ lastListing: null, blueprintId: 7 })).toBe('https://www.cardtrader.com/cards/7');
+    expect(cardTraderUrl({ lastListing: null })).toBe('https://www.cardtrader.com');
   });
 });

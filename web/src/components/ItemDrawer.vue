@@ -24,11 +24,12 @@ import MultiSelect from 'primevue/multiselect';
 import Select from 'primevue/select';
 import { useConfirm } from 'primevue/useconfirm';
 import { computed, ref, watch } from 'vue';
+import { onBeforeRouteLeave, onBeforeRouteUpdate } from 'vue-router';
 import { api } from '../api';
 import { FINISH_OPTIONS, fromFinish, toFinish } from '../finish-choice';
 import { cardStatus } from '../card-status';
 import { latestRequest } from '../latest-request';
-import { gapSentence, targetGap } from '../row-format';
+import { cardTraderUrl as cardTraderLink, gapSentence, largeImageUrl, listingLine, targetGap } from '../row-format';
 import { formatWhen } from '../time-format';
 import PriceHistoryChart from './PriceHistoryChart.vue';
 import StatusPill from './StatusPill.vue';
@@ -91,7 +92,8 @@ const finish = computed({
 
 const dirty = computed(() => props.item !== null && JSON.stringify(form.value) !== baseline.value);
 
-// A new item resets the form; fresh data for the same item (a run finished) only when nothing is being edited.
+// A new item resets the form (the route guards below already asked about unsaved edits);
+// fresh data for the same item (a run finished) only when nothing is being edited.
 watch(
   () => props.item,
   (item, previous) => {
@@ -132,20 +134,35 @@ const visible = computed({
   },
 });
 
+/** Closing changes `?item=`: the route guards below ask about unsaved edits. */
 function requestClose() {
-  if (!dirty.value) {
-    emit('close');
-    return;
-  }
-  confirm.require({
-    message: 'Discard your unsaved changes?',
-    header: 'Unsaved changes',
-    icon: 'pi pi-exclamation-triangle',
-    acceptProps: { label: 'Discard', severity: 'danger' },
-    rejectProps: { label: 'Keep editing', severity: 'secondary', outlined: true },
-    accept: () => emit('close'),
+  emit('close');
+}
+
+/** Resolves true when there is nothing to lose or the user agrees to drop the edits. */
+function confirmDiscard(): Promise<boolean> {
+  if (!dirty.value) return Promise.resolve(true);
+  return new Promise((resolve) => {
+    confirm.require({
+      message: 'Discard your unsaved changes?',
+      header: 'Unsaved changes',
+      icon: 'pi pi-exclamation-triangle',
+      acceptProps: { label: 'Discard', severity: 'danger' },
+      rejectProps: { label: 'Keep editing', severity: 'secondary', outlined: true },
+      accept: () => {
+        baseline.value = JSON.stringify(form.value);
+        resolve(true);
+      },
+      reject: () => resolve(false),
+      onHide: () => resolve(false),
+    });
   });
 }
+
+// Any navigation that closes or switches the panel (close button, Esc, another row, back/forward,
+// a sidebar link) goes through these: unsaved edits are never dropped silently.
+onBeforeRouteUpdate((to, from) => (to.query.item === from.query.item ? true : confirmDiscard()));
+onBeforeRouteLeave(() => confirmDiscard());
 
 const status = computed(() => (props.item ? cardStatus(props.item) : 'pending'));
 const presets = computed(() => (props.item ? thresholdPresets(props.item.lastPriceCents) : []));
@@ -153,7 +170,7 @@ const gap = computed(() => (props.item ? targetGap(props.item) : null));
 const image = computed(() => {
   const url = props.item?.imageUrl;
   if (!url) return null;
-  return props.kind === 'card' ? url.replace('/small/', '/normal/') : url.replace('/preview_', '/show_');
+  return largeImageUrl(props.kind, url);
 });
 const context = computed(() => {
   if (sealed.value) return `Sealed product · ${sealed.value.categoryName}`;
@@ -162,17 +179,11 @@ const context = computed(() => {
   return group ? `Card · ${group}` : 'Card · no group';
 });
 const listing = computed(() => {
-  const l = props.item?.lastListing;
-  if (!l) return props.item?.lastSyncStatus === 'error' ? 'last update failed' : 'no offer matches the rules';
-  if (props.kind === 'sealed') return l.language ? l.language.toUpperCase() : '';
-  return [l.expansionName, l.condition, l.language.toUpperCase(), l.foil ? 'Foil' : null].filter(Boolean).join(' · ');
-});
-const cardTraderUrl = computed(() => {
   const item = props.item;
-  if (!item) return '#';
-  if (item.lastListing) return item.lastListing.url;
-  return sealed.value ? `https://www.cardtrader.com/cards/${sealed.value.blueprintId}` : 'https://www.cardtrader.com';
+  if (!item?.lastListing) return item?.lastSyncStatus === 'error' ? 'last update failed' : 'no offer matches the rules';
+  return listingLine(props.kind, item.lastListing) ?? '';
 });
+const cardTraderUrl = computed(() => (props.item ? cardTraderLink(props.item) : '#'));
 const checked = computed(() => {
   const item = props.item;
   if (!item?.lastSyncedAt) return 'Not checked yet';

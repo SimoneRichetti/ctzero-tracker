@@ -1,4 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
+import { ApiError } from './api';
+import { BulkStoppedError } from './bulk-cards';
 import { bulkSealed } from './sealed-bulk';
 
 function client() {
@@ -24,10 +26,27 @@ describe('bulkSealed', () => {
     expect(c.put).toHaveBeenCalledWith('/api/sealed/1', { languages: ['en'], thresholdCents: 18000 });
   });
 
-  it('delete, with a failure reported and the rest done', async () => {
+  it('a product rejected by the server is skipped, the rest done', async () => {
     const c = client();
-    c.del.mockRejectedValueOnce(new Error('boom'));
+    c.del.mockRejectedValueOnce(new ApiError(404, 'not found'));
     const r = await bulkSealed([priced, unpriced], { type: 'delete' }, c);
-    expect(r).toEqual({ updated: [2], skipped: [{ id: 1, reason: 'boom' }] });
+    expect(r).toEqual({ updated: [2], skipped: [{ id: 1, reason: 'not found' }] });
+  });
+
+  it('a server or network error on the first product is rethrown, nothing else is tried', async () => {
+    const c = client();
+    c.del.mockRejectedValueOnce(new TypeError('Failed to fetch'));
+    await expect(bulkSealed([priced, unpriced], { type: 'delete' }, c)).rejects.toThrow('Failed to fetch');
+    expect(c.del).toHaveBeenCalledTimes(1);
+  });
+
+  it('a server error part way stops with what went through', async () => {
+    const c = client();
+    c.del.mockResolvedValueOnce(undefined).mockRejectedValueOnce(new ApiError(503, 'CardTrader token rejected'));
+    const third = { ...priced, id: 3 };
+    const err = await bulkSealed([priced, unpriced, third], { type: 'delete' }, c).catch((e) => e);
+    expect(err).toBeInstanceOf(BulkStoppedError);
+    expect(err.partial).toEqual({ updated: [1], skipped: [] });
+    expect(c.del).toHaveBeenCalledTimes(2);
   });
 });

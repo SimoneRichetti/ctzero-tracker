@@ -9,12 +9,12 @@ export const router = createRouter({
   routes: [
     {
       path: '/',
-      // Links from before the rework used `/?group=<id|none>`.
+      // Links from before the rework used `/?group=<id|none>`; the rest of the query (e.g. `item`) is kept.
       redirect: (to) => {
-        const group = to.query.group;
-        if (group === 'none') return '/cards/ungrouped';
-        if (typeof group === 'string' && /^\d+$/.test(group)) return `/groups/${group}`;
-        return '/cards';
+        const { group, ...query } = to.query;
+        const path =
+          group === 'none' ? '/cards/ungrouped' : typeof group === 'string' && /^\d+$/.test(group) ? `/groups/${group}` : '/cards';
+        return { path, query };
       },
     },
     { path: '/cards', component: CardsPage, props: { scope: 'all' } },

@@ -3,40 +3,23 @@ import type { BulkResult, TrackedSealed, TrackedSealedRow } from '@ctzero/shared
 import Button from 'primevue/button';
 import { useConfirm } from 'primevue/useconfirm';
 import { useToast } from 'primevue/usetoast';
-import { computed, ref, watch } from 'vue';
-import { useRoute, useRouter } from 'vue-router';
+import { ref, watch } from 'vue';
 import { useCatalog } from '../catalog';
 import BulkBar from '../components/BulkBar.vue';
 import BulkThresholdDialog from '../components/BulkThresholdDialog.vue';
 import ItemDrawer from '../components/ItemDrawer.vue';
 import SealedDialog from '../components/SealedDialog.vue';
 import TrackedList from '../components/TrackedList.vue';
+import { useOpenItem } from '../open-item';
+import { BulkStoppedError } from '../bulk-cards';
 import { bulkSealed } from '../sealed-bulk';
 
 const toast = useToast();
 const confirm = useConfirm();
-const route = useRoute();
-const router = useRouter();
 const { sealed, groups, loading, loaded, reloadSealed } = useCatalog();
 
 // ---------- detail panel (?item=) ----------
-const openId = computed(() => {
-  const raw = Number(route.query.item);
-  return Number.isInteger(raw) && raw > 0 ? raw : null;
-});
-const openItem = computed(() => sealed.value.find((s) => s.id === openId.value) ?? null);
-watch([openId, () => loaded.sealed, sealed], () => {
-  if (openId.value !== null && loaded.sealed && !openItem.value) closeItem();
-});
-
-function openProduct(id: number) {
-  void router.replace({ query: { ...route.query, item: String(id) } });
-}
-
-function closeItem() {
-  const { item: _item, ...rest } = route.query;
-  void router.replace({ query: rest });
-}
+const { openId, openItem, open: openProduct, close: closeItem } = useOpenItem(sealed, () => loaded.sealed);
 
 function onSaved(item: TrackedSealed) {
   toast.add({ severity: 'success', summary: `${item.name} saved`, life: 3000 });
@@ -66,16 +49,17 @@ watch(sealed, (list) => {
   selected.value = list.filter((s) => ids.has(s.id));
 });
 
-function onBulkDone(result: BulkResult, verb = 'updated') {
+/** Products that were skipped, or not reached because the action stopped, stay selected for a retry. */
+function onBulkDone(result: BulkResult, stoppedBy?: string, verb = 'updated') {
   const skipped = result.skipped.length > 0 ? `, ${result.skipped.length} skipped (${result.skipped[0]!.reason})` : '';
   toast.add({
-    severity: result.skipped.length > 0 ? 'warn' : 'success',
-    summary: `${result.updated.length} products ${verb}${skipped}`,
-    life: 5000,
+    severity: stoppedBy || result.skipped.length > 0 ? 'warn' : 'success',
+    summary: stoppedBy ? `Stopped after ${result.updated.length} products ${verb}${skipped}` : `${result.updated.length} products ${verb}${skipped}`,
+    detail: stoppedBy ? `${stoppedBy}. The products not processed are still selected.` : undefined,
+    life: stoppedBy ? 8000 : 5000,
   });
-  // Products that were skipped stay selected, so the action can be retried on them.
-  const skippedIds = new Set(result.skipped.map((s) => s.id));
-  selected.value = selected.value.filter((s) => skippedIds.has(s.id));
+  const done = new Set(result.updated);
+  selected.value = selected.value.filter((s) => !done.has(s.id));
   void reloadSealed();
 }
 
@@ -87,7 +71,14 @@ function confirmBulkDelete() {
     icon: 'pi pi-exclamation-triangle',
     acceptProps: { label: 'Stop tracking', severity: 'danger' },
     rejectProps: { label: 'Cancel', severity: 'secondary', outlined: true },
-    accept: async () => onBulkDone(await bulkSealed(items, { type: 'delete' }), 'removed'),
+    accept: async () => {
+      try {
+        onBulkDone(await bulkSealed(items, { type: 'delete' }), undefined, 'removed');
+      } catch (e) {
+        if (e instanceof BulkStoppedError) onBulkDone(e.partial, e.message, 'removed');
+        else toast.add({ severity: 'error', summary: 'Error', detail: (e as Error).message, life: 5000 });
+      }
+    },
   });
 }
 </script>
@@ -122,5 +113,5 @@ function confirmBulkDelete() {
 
   <ItemDrawer kind="sealed" :item="openItem" :groups="groups" @close="closeItem" @saved="onSaved($event as TrackedSealed)" @deleted="onDeleted($event as TrackedSealedRow)" />
   <SealedDialog v-model:visible="addVisible" @saved="onAdded" />
-  <BulkThresholdDialog v-model:visible="thresholdVisible" kind="sealed" :items="selected" @done="(r) => onBulkDone(r)" />
+  <BulkThresholdDialog v-model:visible="thresholdVisible" kind="sealed" :items="selected" @done="onBulkDone" />
 </template>

@@ -1,5 +1,5 @@
 <script setup lang="ts" generic="R extends TrackedCardRow | TrackedSealedRow">
-import { CONDITION_ABBR, formatEuro, type Condition, type TrackedCardRow, type TrackedSealedRow } from '@ctzero/shared';
+import { formatEuro, type TrackedCardRow, type TrackedSealedRow } from '@ctzero/shared';
 import Button from 'primevue/button';
 import Column from 'primevue/column';
 import DataTable from 'primevue/datatable';
@@ -12,7 +12,7 @@ import { useRoute, useRouter } from 'vue-router';
 import { cardStatus } from '../card-status';
 import { summarize } from '../group-summary';
 import { SORT_OPTIONS, STATUS_TABS, filterByTab, matchesSearch, parseSort, parseTab, sortItems, tabCounts, type SortKey, type StatusTab } from '../list-filters';
-import { cardMetaLine, formatChange, sealedMetaLine } from '../row-format';
+import { cardMetaLine, cardTraderUrl, formatChange, largeImageUrl, listingLine, sealedMetaLine } from '../row-format';
 import PriceSparkline from './PriceSparkline.vue';
 import SegmentedControl from './SegmentedControl.vue';
 import StatusPill from './StatusPill.vue';
@@ -65,40 +65,31 @@ watch(
 watch([tab, () => route.query.q], () => (selection.value = []));
 
 const summary = computed(() => summarize(props.items));
-const counts = computed(() => tabCounts(props.items.filter((i) => matchesSearch(i.name, search.value))));
+const searched = computed(() => props.items.filter((i) => matchesSearch(i.name, search.value)));
+const counts = computed(() => tabCounts(searched.value));
 const tabOptions = computed(() => STATUS_TABS.map((t) => ({ ...t, count: counts.value[t.value] })));
-const rows = computed(() =>
-  sortItems(
-    filterByTab(
-      props.items.filter((i) => matchesSearch(i.name, search.value)),
-      tab.value,
+const rows = computed(() => sortItems(filterByTab(searched.value, tab.value), sort.value));
+
+/** Display values of each visible row, computed once per change instead of on every render. */
+const info = computed(
+  () =>
+    new Map(
+      rows.value.map((row) => {
+        const card = props.kind === 'card' ? (row as TrackedCardRow) : null;
+        return [
+          row.id,
+          {
+            meta: card ? cardMetaLine(card) : sealedMetaLine(row as TrackedSealedRow),
+            group: card && card.groupId !== null ? props.groupNames?.get(card.groupId) : undefined,
+            listing: listingLine(props.kind, row.lastListing),
+            change: formatChange(row.trend.change7dPct),
+            url: cardTraderUrl(row),
+          },
+        ];
+      }),
     ),
-    sort.value,
-  ),
 );
-
-const isCard = (row: Row): row is TrackedCardRow => props.kind === 'card';
-
-function metaLine(row: Row): string {
-  return isCard(row) ? cardMetaLine(row) : sealedMetaLine(row as TrackedSealedRow);
-}
-
-function groupName(row: Row): string | undefined {
-  return isCard(row) && row.groupId !== null ? props.groupNames?.get(row.groupId) : undefined;
-}
-
-function listingLine(row: Row): string | null {
-  const l = row.lastListing;
-  if (!l) return null;
-  if (!isCard(row)) return l.language ? l.language.toUpperCase() : null;
-  const cond = CONDITION_ABBR[l.condition as Condition] ?? l.condition;
-  return [l.expansionName, cond, l.language.toUpperCase(), l.foil ? 'Foil' : null].filter(Boolean).join(' · ');
-}
-
-function cardTraderUrl(row: Row): string {
-  if (row.lastListing) return row.lastListing.url;
-  return isCard(row) ? 'https://www.cardtrader.com' : `https://www.cardtrader.com/cards/${(row as TrackedSealedRow).blueprintId}`;
-}
+const rowInfo = (row: Row) => info.value.get(row.id)!;
 
 function rowClass(row: Row) {
   return row.id === props.openId ? 'is-open' : undefined;
@@ -115,8 +106,7 @@ function showPreview(event: MouseEvent, row: Row) {
   const rect = (event.currentTarget as HTMLElement).getBoundingClientRect();
   const margin = 8;
   const top = Math.min(Math.max(margin, rect.top + rect.height / 2 - height / 2), window.innerHeight - height - margin);
-  const src = card ? row.imageUrl.replace('/small/', '/normal/') : row.imageUrl.replace('/preview_', '/show_');
-  preview.value = { src, alt: row.name, top, left: rect.right + 12, width };
+  preview.value = { src: largeImageUrl(props.kind, row.imageUrl), alt: row.name, top, left: rect.right + 12, width };
 }
 </script>
 
@@ -186,8 +176,8 @@ function showPreview(event: MouseEvent, row: Row) {
           <div class="item-text">
             <button type="button" class="item-name" @click="emit('open', data.id)">{{ data.name }}</button>
             <div class="item-meta">
-              <span v-if="groupName(data)" class="group-chip"><i class="pi pi-folder" aria-hidden="true"></i>{{ groupName(data) }}</span>
-              <span>{{ metaLine(data) }}</span>
+              <span v-if="rowInfo(data).group" class="group-chip"><i class="pi pi-folder" aria-hidden="true"></i>{{ rowInfo(data).group }}</span>
+              <span>{{ rowInfo(data).meta }}</span>
             </div>
           </div>
         </div>
@@ -197,7 +187,7 @@ function showPreview(event: MouseEvent, row: Row) {
       <template #body="{ data }">
         <div class="price mono">{{ data.lastPriceCents === null ? '—' : formatEuro(data.lastPriceCents) }}</div>
         <StatusPill v-tooltip.top="data.lastError ?? undefined" :status="cardStatus(data)" class="pill" />
-        <div v-if="listingLine(data)" class="listing">{{ listingLine(data) }}</div>
+        <div v-if="rowInfo(data).listing" class="listing">{{ rowInfo(data).listing }}</div>
       </template>
     </Column>
     <Column header="Target" style="width: 11.5rem">
@@ -212,12 +202,12 @@ function showPreview(event: MouseEvent, row: Row) {
           v-if="data.trend.sparkline.length > 1"
           type="button"
           class="trend"
-          :class="`tone-${formatChange(data.trend.change7dPct).tone}`"
+          :class="`tone-${rowInfo(data).change.tone}`"
           :aria-label="`Price history of ${data.name}`"
           @click="emit('open', data.id)"
         >
           <PriceSparkline :points="data.trend.sparkline" />
-          <span class="mono">{{ formatChange(data.trend.change7dPct).text }}</span>
+          <span class="mono">{{ rowInfo(data).change.text }}</span>
         </button>
         <span v-else-if="data.lastSyncStatus === 'error'" v-tooltip.top="data.lastError ?? undefined" class="no-trend">Update failed</span>
         <span v-else class="no-trend">No data yet</span>
@@ -227,7 +217,7 @@ function showPreview(event: MouseEvent, row: Row) {
       <template #header><span class="visually-hidden">Actions</span></template>
       <template #body="{ data }">
         <div class="actions">
-          <a :href="cardTraderUrl(data)" target="_blank" rel="noopener" :aria-label="`Open ${data.name} on CardTrader`" v-tooltip.top="'Open on CardTrader'">
+          <a :href="rowInfo(data).url" target="_blank" rel="noopener" :aria-label="`Open ${data.name} on CardTrader`" v-tooltip.top="'Open on CardTrader'">
             <i class="pi pi-external-link" aria-hidden="true"></i>
           </a>
           <Button icon="pi pi-angle-right" text rounded severity="secondary" :aria-label="`Open details of ${data.name}`" @click="emit('open', data.id)" />
