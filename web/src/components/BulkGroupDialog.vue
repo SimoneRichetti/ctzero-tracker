@@ -70,7 +70,7 @@ async function apply() {
 </script>
 
 <template>
-  <Dialog v-model:visible="visible" modal header="Move to group" :style="{ width: '30rem' }">
+  <Dialog v-model:visible="visible" modal header="Move to group" :style="{ width: '30rem' }" :breakpoints="{ '600px': '95vw' }">
     <p class="muted">Applies to {{ cards.length }} cards.</p>
     <div class="field">
       <label for="bulk-group">Group</label>

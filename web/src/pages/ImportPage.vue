@@ -1,7 +1,6 @@
 <script setup lang="ts">
 import {
   CONDITIONS,
-  FOIL_OPTIONS,
   LANGUAGES,
   LANGUAGE_LABELS,
   MAX_IMPORT_CARDS,
@@ -24,15 +23,19 @@ import InputText from 'primevue/inputtext';
 import Message from 'primevue/message';
 import MultiSelect from 'primevue/multiselect';
 import Select from 'primevue/select';
-import SelectButton from 'primevue/selectbutton';
 import Tag from 'primevue/tag';
 import Textarea from 'primevue/textarea';
 import ToggleSwitch from 'primevue/toggleswitch';
 import { useToast } from 'primevue/usetoast';
-import { computed, onBeforeUnmount, onMounted, ref } from 'vue';
+import { computed, onBeforeUnmount, ref, watch } from 'vue';
+import { useRoute } from 'vue-router';
 import { api } from '../api';
+import { FINISH_OPTIONS, finishModel } from '../finish-choice';
 import { runBatch } from '../batch-runner';
+import { useCatalog } from '../catalog';
 import BatchProgress from '../components/BatchProgress.vue';
+import SegmentedControl from '../components/SegmentedControl.vue';
+import { groupFilterPath } from '../group-summary';
 import {
   buildReviewRows,
   canInclude,
@@ -49,10 +52,15 @@ type Step = 'input' | 'resolving' | 'review' | 'creating' | 'done';
 const toast = useToast();
 const conditionOptions = [...CONDITIONS];
 const languageOptions = LANGUAGES.map((code) => ({ code, label: LANGUAGE_LABELS[code] }));
-const groupModeOptions = [
+const groupModeOptions: { label: string; value: 'new' | 'existing' | 'none' }[] = [
   { label: 'New group', value: 'new' },
   { label: 'Existing group', value: 'existing' },
   { label: 'No group', value: 'none' },
+];
+const STEPS = [
+  { label: 'Paste the list', steps: ['input'] },
+  { label: 'Review prices and targets', steps: ['resolving', 'review'] },
+  { label: 'Done', steps: ['creating', 'done'] },
 ];
 const STATUS_TAGS: Record<RowStatus, { label: string; severity: 'success' | 'info' | 'warn' | 'danger' }> = {
   ok: { label: 'Ready', severity: 'success' },
@@ -66,6 +74,7 @@ const text = ref('');
 const languages = ref<Language[]>([]);
 const minCondition = ref<Condition>('Near Mint');
 const foil = ref<boolean | null>(null);
+const finish = finishModel(foil);
 const respectSet = ref(false);
 const thresholdMode = ref<'percent' | 'fixed'>('percent');
 const percent = ref<number | null>(10);
@@ -73,7 +82,8 @@ const fixedEuro = ref<number | null>(null);
 const groupMode = ref<'new' | 'existing' | 'none'>('new');
 const newGroupName = ref('');
 const existingGroupId = ref<number | null>(null);
-const groups = ref<CardGroup[]>([]);
+const route = useRoute();
+const { groups, reloadCardsAndGroups, reloadGroups } = useCatalog();
 
 const step = ref<Step>('input');
 const progress = ref({ done: 0, total: 0 });
@@ -104,15 +114,17 @@ const canResolve = computed(
 );
 const toCreate = computed(() => rowsToCreate(rows.value));
 
-async function loadGroups() {
-  try {
-    groups.value = await api.get<CardGroup[]>('/api/groups');
-  } catch (e) {
-    toast.add({ severity: 'error', summary: 'Error', detail: (e as Error).message, life: 5000 });
-  }
+// Opened from a group ("Import into group"): that group is the destination.
+const presetGroupId = Number(route.query.group);
+if (Number.isInteger(presetGroupId) && presetGroupId > 0) {
+  groupMode.value = 'existing';
+  existingGroupId.value = presetGroupId;
 }
+watch(groups, (list) => {
+  if (existingGroupId.value !== null && !list.some((g) => g.id === existingGroupId.value)) existingGroupId.value = null;
+});
 
-onMounted(loadGroups);
+const stepIndex = computed(() => STEPS.findIndex((s) => s.steps.includes(step.value)));
 
 const pausedSeconds = ref<number | null>(null);
 
@@ -190,6 +202,7 @@ async function confirmImport() {
           : null,
   };
   step.value = 'done';
+  void reloadCardsAndGroups();
 }
 
 onBeforeUnmount(() => controller?.abort());
@@ -213,113 +226,122 @@ function startOver() {
   newGroupName.value = '';
   step.value = 'input';
   // The import may have created a group: the name check and the 'Existing group' list need it.
-  void loadGroups();
+  void reloadGroups();
 }
 </script>
 
 <template>
-  <div class="page-header">
-    <h1>Import list</h1>
-    <RouterLink v-if="step !== 'resolving' && step !== 'creating'" to="/"><Button label="Back to cards" icon="pi pi-arrow-left" severity="secondary" text /></RouterLink>
+  <div class="page">
+  <div class="page-head">
+    <div>
+      <div class="eyebrow">Cards</div>
+      <h1 class="page-title">Import a list</h1>
+    </div>
   </div>
 
+  <ol class="steps">
+    <li v-for="(s, i) in STEPS" :key="s.label" :class="{ current: i === stepIndex, done: i < stepIndex }">
+      <span class="step-no">{{ i + 1 }}</span>{{ s.label }}
+    </li>
+  </ol>
+
   <!-- Step 1: list and options -->
-  <section v-if="step === 'input'" class="panel">
-    <div class="field">
-      <label for="decklist">Decklist</label>
+  <div v-if="step === 'input'" class="input-grid">
+    <section class="panel">
+      <label for="decklist" class="panel-title block">Decklist</label>
       <Textarea
         id="decklist"
         v-model="text"
-        rows="12"
+        rows="16"
         placeholder="1 Sol Ring (C21) 263&#10;4x Lightning Bolt&#10;Arcane Signet"
         fluid
+        class="decklist"
       />
-      <small class="muted">
-        One card per line, as exported by Moxfield, Archidekt or MTG Arena. Quantities are ignored.
-        {{ parsed.lines.length }} cards<template v-if="parsed.errors.length">, {{ parsed.errors.length }} lines not recognized</template>.
-      </small>
+      <div class="deck-info">
+        <span><strong>{{ parsed.lines.length }}</strong> cards recognised</span>
+        <span v-if="parsed.errors.length" class="warn">{{ parsed.errors.length }} lines skipped</span>
+        <span>Moxfield, Archidekt and MTG Arena exports work. Quantities are ignored.</span>
+      </div>
       <ul v-if="parsed.errors.length" class="error-list">
         <li v-for="e in parsed.errors" :key="e.lineNo">Line {{ e.lineNo }}: {{ e.text }}</li>
       </ul>
       <Message v-if="tooMany" severity="error">At most {{ MAX_IMPORT_CARDS }} cards per import.</Message>
-    </div>
+    </section>
 
-    <div class="options">
-      <div>
-        <div class="field">
-          <label for="imp-languages">Languages</label>
-          <MultiSelect
-            v-model="languages"
-            input-id="imp-languages"
-            :options="languageOptions"
-            option-label="label"
-            option-value="code"
-            placeholder="Any language"
-            display="chip"
-            fluid
-          />
+    <section class="panel options">
+      <div class="block">
+        <div class="panel-title">Add to group</div>
+        <SegmentedControl v-model="groupMode" :options="groupModeOptions" label="Destination" />
+        <InputText v-if="groupMode === 'new'" v-model="newGroupName" placeholder="New group name" aria-label="New group name" fluid />
+        <Select
+          v-else-if="groupMode === 'existing'"
+          v-model="existingGroupId"
+          :options="groups"
+          option-label="name"
+          option-value="id"
+          placeholder="Choose a group"
+          aria-label="Group"
+          fluid
+        />
+        <small v-if="groupError && parsed.lines.length > 0" class="muted">{{ groupError }}</small>
+      </div>
+
+      <div class="block">
+        <div class="panel-title">Rules for every card</div>
+        <div class="two">
+          <div class="field">
+            <label for="imp-languages">Languages</label>
+            <MultiSelect
+              v-model="languages"
+              input-id="imp-languages"
+              :options="languageOptions"
+              option-label="label"
+              option-value="code"
+              placeholder="Any language"
+              :max-selected-labels="2"
+              selected-items-label="{0} languages"
+              fluid
+            />
+          </div>
+          <div class="field">
+            <label for="imp-condition">Minimum condition</label>
+            <Select v-model="minCondition" input-id="imp-condition" :options="conditionOptions" fluid />
+          </div>
         </div>
         <div class="field">
-          <label for="imp-condition">Minimum condition</label>
-          <Select v-model="minCondition" input-id="imp-condition" :options="conditionOptions" fluid />
-        </div>
-        <div class="field">
-          <label for="imp-foil">Foil (lines marked *F* are always foil only)</label>
-          <Select v-model="foil" input-id="imp-foil" :options="FOIL_OPTIONS" option-label="label" option-value="value" fluid />
+          <label for="imp-foil">Finish (lines marked *F* are always foil only)</label>
+          <Select v-model="finish" input-id="imp-foil" :options="FINISH_OPTIONS" option-label="label" option-value="value" fluid />
         </div>
         <div class="field inline">
           <ToggleSwitch v-model="respectSet" input-id="imp-set" />
-          <label for="imp-set">Only the set written in the list</label>
+          <label for="imp-set" class="toggle-label">Only the set written in the list</label>
         </div>
       </div>
 
-      <div>
-        <div class="field">
-          <label>Default threshold</label>
-          <SelectButton
-            v-model="thresholdMode"
-            :options="THRESHOLD_MODE_OPTIONS"
-            option-label="label"
-            option-value="value"
-            :allow-empty="false"
-          />
-          <InputNumber v-if="thresholdMode === 'percent'" v-model="percent" suffix=" %" :min="MIN_PERCENT" :max="MAX_PERCENT" aria-label="Percent" />
-          <InputNumber
-            v-else
-            v-model="fixedEuro"
-            mode="currency"
-            currency="EUR"
-            locale="en-US"
-            :min="MIN_THRESHOLD_CENTS / 100"
-            aria-label="Threshold"
-          />
-        </div>
-        <div class="field">
-          <label>Group</label>
-          <SelectButton
-            v-model="groupMode"
-            :options="groupModeOptions"
-            option-label="label"
-            option-value="value"
-            :allow-empty="false"
-          />
-          <InputText v-if="groupMode === 'new'" v-model="newGroupName" placeholder="New group name" fluid />
-          <Select
-            v-else-if="groupMode === 'existing'"
-            v-model="existingGroupId"
-            :options="groups"
-            option-label="name"
-            option-value="id"
-            placeholder="Choose a group"
-            fluid
-          />
-          <small v-if="groupError && parsed.lines.length > 0" class="muted">{{ groupError }}</small>
-        </div>
+      <div class="block">
+        <div class="panel-title">Target for every card</div>
+        <SegmentedControl v-model="thresholdMode" :options="THRESHOLD_MODE_OPTIONS" label="How to set the target" />
+        <InputNumber v-if="thresholdMode === 'percent'" v-model="percent" suffix=" %" :min="MIN_PERCENT" :max="MAX_PERCENT" aria-label="Percent" />
+        <InputNumber
+          v-else
+          v-model="fixedEuro"
+          mode="currency"
+          currency="EUR"
+          locale="en-US"
+          :min="MIN_THRESHOLD_CENTS / 100"
+          aria-label="Target"
+        />
+        <small class="muted">You can adjust each card in the next step.</small>
       </div>
-    </div>
 
-    <Button label="Check prices" icon="pi pi-search" :disabled="!canResolve" @click="resolveLines" />
-  </section>
+      <Button
+        :label="parsed.lines.length > 0 ? `Check prices for ${parsed.lines.length} cards` : 'Check prices'"
+        icon="pi pi-search"
+        :disabled="!canResolve"
+        @click="resolveLines"
+      />
+    </section>
+  </div>
 
   <!-- Steps 2 and 4: progress -->
   <section v-else-if="step === 'resolving' || step === 'creating'" class="panel">
@@ -343,7 +365,7 @@ function startOver() {
         />
       </div>
     </div>
-    <DataTable :value="rows" data-key="line.lineNo" striped-rows>
+    <DataTable :value="rows" data-key="line.lineNo" class="ct-table" scrollable>
       <Column header="" style="width: 3rem">
         <template #body="{ data }">
           <Checkbox v-model="data.include" binary :disabled="!canInclude(data)" />
@@ -372,7 +394,7 @@ function startOver() {
           <span v-else>—</span>
         </template>
       </Column>
-      <Column header="Threshold">
+      <Column header="Target">
         <template #body="{ data }">
           <InputNumber
             v-if="data.result"
@@ -383,7 +405,7 @@ function startOver() {
             :min="MIN_THRESHOLD_CENTS / 100"
             input-class="threshold-input"
             :invalid="data.thresholdCents !== null && !canInclude(data)"
-            aria-label="Threshold"
+            aria-label="Target"
             @update:model-value="(v: number | null) => onThresholdInput(data, v)"
           />
         </template>
@@ -408,42 +430,123 @@ function startOver() {
       </ul>
     </template>
     <div class="review-actions">
-      <RouterLink :to="result.groupId !== null ? `/?group=${result.groupId}` : '/'">
+      <RouterLink :to="groupFilterPath(result.groupId ?? 'all')">
         <Button :label="result.groupId !== null ? 'Open the group' : 'Open cards'" icon="pi pi-arrow-right" />
       </RouterLink>
       <Button label="Import another list" severity="secondary" text @click="startOver" />
     </div>
   </section>
+  </div>
 </template>
 
 <style scoped>
-.page-header {
+.steps {
   display: flex;
-  justify-content: space-between;
-  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px 28px;
+  list-style: none;
+  margin: -8px 0 24px;
+  padding: 0;
+  font-size: 13px;
+  color: var(--ct-muted);
 }
-.panel {
-  background: #fff;
-  border: 1px solid #e5e7eb;
-  border-radius: 8px;
-  padding: 1.25rem;
+.steps li {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.steps li.current {
+  color: var(--ct-ink);
+  font-weight: 600;
+}
+.step-no {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border: 1px solid var(--ct-line-strong);
+  border-radius: 999px;
+  font-size: 12px;
+}
+.current .step-no {
+  border-color: var(--ct-accent);
+  background: var(--ct-accent);
+  color: var(--ct-accent-ink);
+}
+.done .step-no {
+  border-color: var(--ct-accent);
+  color: var(--ct-accent-text);
+}
+.input-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr);
+  gap: 20px;
+  align-items: start;
+}
+@media (max-width: 900px) {
+  .input-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+.block {
+  display: block;
+}
+.decklist {
+  font-family: var(--ct-mono);
+  font-size: 13px;
+  line-height: 1.6;
+}
+.deck-info {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 16px;
+  margin-top: 10px;
+  font-size: 12.5px;
+  color: var(--ct-muted);
+}
+.deck-info strong {
+  color: var(--ct-ink);
+}
+.deck-info .warn {
+  color: var(--ct-warn);
 }
 .options {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 1.5rem;
-  margin-bottom: 1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 22px;
 }
-.options .field > .p-inputnumber,
-.options .field > .p-inputtext,
-.options .field > .p-select {
-  margin-top: 0.5rem;
+.options .block {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.options .block .panel-title {
+  margin-bottom: 0;
+}
+.options .field {
+  margin-bottom: 0;
+}
+.options :deep(.seg) {
+  align-self: flex-start;
+}
+.two {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+.toggle-label {
+  color: var(--ct-ink) !important;
+  font-weight: 400 !important;
+  font-size: 13.5px !important;
 }
 .review-header {
   display: flex;
+  flex-wrap: wrap;
   justify-content: space-between;
   align-items: center;
-  margin-bottom: 0.75rem;
+  gap: 12px;
+  margin-bottom: 12px;
 }
 .review-actions {
   display: flex;
@@ -456,7 +559,7 @@ function startOver() {
 .row-error {
   margin-top: 0.25rem;
   max-width: 22rem;
-  color: #b91c1c;
+  color: var(--ct-danger);
   font-size: 0.8rem;
 }
 :deep(.threshold-input) {

@@ -1,7 +1,6 @@
 <script setup lang="ts">
 import {
   CONDITIONS,
-  FOIL_OPTIONS,
   LANGUAGES,
   LANGUAGE_LABELS,
   MIN_THRESHOLD_CENTS,
@@ -23,8 +22,10 @@ import MultiSelect from 'primevue/multiselect';
 import Select from 'primevue/select';
 import { computed, ref, watch } from 'vue';
 import { api } from '../api';
+import { FINISH_OPTIONS, finishModel } from '../finish-choice';
 
-const props = defineProps<{ card: TrackedCard | null; groups: CardGroup[]; defaultGroupId: number | null }>();
+/** Creates a card; editing happens in the detail panel. */
+const props = defineProps<{ groups: CardGroup[]; defaultGroupId: number | null }>();
 const visible = defineModel<boolean>('visible', { required: true });
 const emit = defineEmits<{ saved: [card: TrackedCard] }>();
 
@@ -35,6 +36,7 @@ const expansionIds = ref<number[]>([]);
 const languages = ref<Language[]>([]);
 const minCondition = ref<Condition>('Near Mint');
 const foil = ref<boolean | null>(null);
+const finish = finishModel(foil);
 const preview = ref<PreviewResult | null>(null);
 const groupId = ref<number | null>(null);
 const thresholdEuro = ref<number | null>(null);
@@ -43,14 +45,13 @@ const loadingLookup = ref(false);
 const loadingPreview = ref(false);
 const saving = ref(false);
 
-const isEdit = computed(() => props.card !== null);
 const conditionOptions = [...CONDITIONS];
 const languageOptions = LANGUAGES.map((code) => ({ code, label: LANGUAGE_LABELS[code] }));
 const expansionOptions = computed(() => lookup.value?.printings ?? []);
 const canSave = computed(() => lookup.value !== null && thresholdEuro.value !== null && euroToCents(thresholdEuro.value) >= MIN_THRESHOLD_CENTS);
 
 watch(visible, (open) => {
-  if (open) void reset();
+  if (open) reset();
 });
 
 // A preview computed with different filters is no longer valid.
@@ -66,20 +67,18 @@ watch(name, (value) => {
   }
 });
 
-async function reset() {
-  const c = props.card;
+function reset() {
   error.value = null;
   suggestions.value = [];
   lookup.value = null;
-  name.value = c?.name ?? '';
-  expansionIds.value = c ? [...c.expansionIds] : [];
-  languages.value = c ? [...c.languages] : [];
-  minCondition.value = c?.minCondition ?? 'Near Mint';
-  foil.value = c ? c.foil : null;
-  thresholdEuro.value = c ? c.thresholdCents / 100 : null;
+  name.value = '';
+  expansionIds.value = [];
+  languages.value = [];
+  minCondition.value = 'Near Mint';
+  foil.value = null;
+  thresholdEuro.value = null;
   preview.value = null;
-  groupId.value = c ? c.groupId : props.defaultGroupId;
-  if (c) await loadLookup(c.name);
+  groupId.value = props.defaultGroupId;
 }
 
 async function complete(event: AutoCompleteCompleteEvent) {
@@ -141,9 +140,7 @@ async function save() {
     groupId: groupId.value,
   };
   try {
-    const saved = props.card
-      ? await api.put<TrackedCard>(`/api/cards/${props.card.id}`, payload)
-      : await api.post<TrackedCard>('/api/cards', { name: name.value, ...payload });
+    const saved = await api.post<TrackedCard>('/api/cards', { name: name.value, ...payload });
     emit('saved', saved);
     visible.value = false;
   } catch (e) {
@@ -158,8 +155,9 @@ async function save() {
   <Dialog
     v-model:visible="visible"
     modal
-    :header="isEdit ? 'Edit card' : 'Add card'"
+    header="Add card"
     :style="{ width: '46rem' }"
+    :breakpoints="{ '800px': '95vw' }"
   >
     <div class="field">
       <label for="card-name">Card</label>
@@ -167,7 +165,6 @@ async function save() {
         v-model="name"
         input-id="card-name"
         :suggestions="suggestions"
-        :disabled="isEdit"
         :delay="300"
         :min-length="2"
         placeholder="E.g. Lightning Bolt"
@@ -214,8 +211,8 @@ async function save() {
           <Select v-model="minCondition" input-id="condition" :options="conditionOptions" fluid />
         </div>
         <div class="field">
-          <label for="foil">Foil</label>
-          <Select v-model="foil" input-id="foil" :options="FOIL_OPTIONS" option-label="label" option-value="value" fluid />
+          <label for="foil">Finish</label>
+          <Select v-model="finish" input-id="foil" :options="FINISH_OPTIONS" option-label="label" option-value="value" fluid />
         </div>
       </div>
     </div>
@@ -230,7 +227,7 @@ async function save() {
       />
       <div v-if="preview" class="preview">
         <p v-if="preview.listing">
-          Current CT Zero price: <strong>{{ formatEuro(preview.listing.priceCents) }}</strong> —
+          Current CT Zero price: <strong class="mono">{{ formatEuro(preview.listing.priceCents) }}</strong> —
           {{ preview.listing.expansionName }}, {{ preview.listing.condition }},
           {{ preview.listing.language.toUpperCase() }}<template v-if="preview.listing.foil">, foil</template>
           <a :href="preview.listing.url" target="_blank" rel="noopener">open</a>
@@ -242,7 +239,9 @@ async function save() {
             :key="preset.label"
             :label="`${preset.label} · ${formatEuro(preset.cents)}`"
             size="small"
+            severity="secondary"
             outlined
+            rounded
             @click="thresholdEuro = preset.cents / 100"
           />
         </div>
@@ -261,7 +260,7 @@ async function save() {
         />
       </div>
       <div class="field">
-        <label for="threshold">Notification threshold</label>
+        <label for="threshold">Alert me at or under</label>
         <InputNumber
           v-model="thresholdEuro"
           input-id="threshold"
@@ -292,7 +291,7 @@ async function save() {
   flex: 1;
 }
 .pricing {
-  border-top: 1px solid #e5e7eb;
+  border-top: 1px solid var(--ct-line);
   padding-top: 1rem;
   margin-top: 0.5rem;
 }

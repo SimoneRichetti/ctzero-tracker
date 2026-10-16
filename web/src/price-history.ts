@@ -88,13 +88,6 @@ export function sparklinePoints(points: PriceTrend['sparkline'], width: number, 
     .join(' ');
 }
 
-/** 7-day change for the Trend column: a falling price is good news for a buyer, hence green. */
-export function formatChange(pct: number | null): { text: string; cls: string } {
-  if (pct === null) return { text: '—', cls: '' };
-  const text = `${pct > 0 ? '+' : ''}${pct.toFixed(1)}%`;
-  return { text, cls: pct < 0 ? 'price-down' : pct > 0 ? 'price-up' : '' };
-}
-
 /** Axis label, month first like `formatDateTime` and the rest of the UI. */
 export function formatDay(ms: number): string {
   return new Date(ms).toLocaleDateString('en-US', { month: '2-digit', day: '2-digit' });

@@ -25,7 +25,7 @@ import { latestRequest } from '../latest-request';
 
 type Mode = 'expansion' | 'link';
 
-const props = defineProps<{ item: TrackedSealed | null }>();
+/** Creates a sealed product; editing happens in the detail panel. */
 const visible = defineModel<boolean>('visible', { required: true });
 const emit = defineEmits<{ saved: [item: TrackedSealed] }>();
 
@@ -49,7 +49,6 @@ const catalogRequest = latestRequest();
 const resolveRequest = latestRequest();
 const previewRequest = latestRequest();
 
-const isEdit = computed(() => props.item !== null);
 const modeOptions = [
   { label: 'From expansion', value: 'expansion' },
   { label: 'From link', value: 'link' },
@@ -69,7 +68,6 @@ watch([product, languages], () => {
 });
 
 watch(mode, () => {
-  if (isEdit.value) return;
   resolveRequest.cancel();
   resolving.value = false;
   product.value = null;
@@ -77,7 +75,6 @@ watch(mode, () => {
 });
 
 watch(expansionId, async (id) => {
-  if (isEdit.value) return;
   const isCurrent = catalogRequest.start();
   product.value = null;
   products.value = [];
@@ -96,26 +93,13 @@ watch(expansionId, async (id) => {
 });
 
 async function reset() {
-  const s = props.item;
   error.value = null;
   mode.value = 'expansion';
   link.value = '';
   products.value = [];
   preview.value = null;
-  languages.value = s ? [...s.languages] : [];
-  thresholdEuro.value = s ? s.thresholdCents / 100 : null;
-  if (s) {
-    expansionId.value = s.expansionId;
-    product.value = {
-      blueprintId: s.blueprintId,
-      name: s.name,
-      expansionId: s.expansionId,
-      expansionName: s.expansionName,
-      categoryName: s.categoryName,
-      imageUrl: s.imageUrl,
-    };
-    return;
-  }
+  languages.value = [];
+  thresholdEuro.value = null;
   expansionId.value = null;
   product.value = null;
   if (expansions.value.length === 0) {
@@ -167,13 +151,11 @@ async function save() {
   error.value = null;
   const payload = { languages: languages.value, thresholdCents: euroToCents(thresholdEuro.value) };
   try {
-    const saved = props.item
-      ? await api.put<TrackedSealed>(`/api/sealed/${props.item.id}`, payload)
-      : await api.post<TrackedSealed>('/api/sealed', {
-          blueprintId: product.value.blueprintId,
-          expansionId: product.value.expansionId,
-          ...payload,
-        });
+    const saved = await api.post<TrackedSealed>('/api/sealed', {
+      blueprintId: product.value.blueprintId,
+      expansionId: product.value.expansionId,
+      ...payload,
+    });
     emit('saved', saved);
     visible.value = false;
   } catch (e) {
@@ -188,70 +170,69 @@ async function save() {
   <Dialog
     v-model:visible="visible"
     modal
-    :header="isEdit ? 'Edit sealed product' : 'Add sealed product'"
+    header="Add sealed product"
     :style="{ width: '46rem' }"
+    :breakpoints="{ '800px': '95vw' }"
   >
-    <template v-if="!isEdit">
+    <div class="field">
+      <SelectButton v-model="mode" :options="modeOptions" option-label="label" option-value="value" :allow-empty="false" />
+    </div>
+
+    <div v-if="mode === 'expansion'">
       <div class="field">
-        <SelectButton v-model="mode" :options="modeOptions" option-label="label" option-value="value" :allow-empty="false" />
+        <label for="expansion">Expansion</label>
+        <Select
+          v-model="expansionId"
+          input-id="expansion"
+          :options="expansions"
+          option-label="name"
+          option-value="id"
+          placeholder="Search an expansion"
+          filter
+          :virtual-scroller-options="{ itemSize: 38 }"
+          fluid
+        />
       </div>
-
-      <div v-if="mode === 'expansion'">
-        <div class="field">
-          <label for="expansion">Expansion</label>
-          <Select
-            v-model="expansionId"
-            input-id="expansion"
-            :options="expansions"
-            option-label="name"
-            option-value="id"
-            placeholder="Search an expansion"
-            filter
-            :virtual-scroller-options="{ itemSize: 38 }"
-            fluid
-          />
-        </div>
-        <div v-if="expansionId !== null" class="field">
-          <label for="product">Product</label>
-          <Select
-            v-model="product"
-            input-id="product"
-            :options="products"
-            option-label="name"
-            data-key="blueprintId"
-            :loading="loadingProducts"
-            placeholder="Select a product"
-            empty-message="No sealed products for this expansion"
-            filter
-            fluid
-          >
-            <template #option="{ option }">
-              <div class="product-option">
-                <img v-if="option.imageUrl" :src="option.imageUrl" :alt="option.name" />
-                <div>
-                  <div>{{ option.name }}</div>
-                  <small class="muted">{{ option.categoryName }}</small>
-                </div>
+      <div v-if="expansionId !== null" class="field">
+        <label for="product">Product</label>
+        <Select
+          v-model="product"
+          input-id="product"
+          :options="products"
+          option-label="name"
+          data-key="blueprintId"
+          :loading="loadingProducts"
+          placeholder="Select a product"
+          empty-message="No sealed products for this expansion"
+          filter
+          fluid
+        >
+          <template #option="{ option }">
+            <div class="product-option">
+              <img v-if="option.imageUrl" :src="option.imageUrl" :alt="option.name" />
+              <div>
+                <div>{{ option.name }}</div>
+                <small class="muted">{{ option.categoryName }}</small>
               </div>
-            </template>
-          </Select>
-        </div>
+            </div>
+          </template>
+        </Select>
       </div>
+    </div>
 
-      <div v-else class="field">
-        <label for="link">CardTrader link or id</label>
-        <div class="link-row">
-          <InputText
-            id="link"
-            v-model="link"
-            placeholder="https://www.cardtrader.com/en-EU/cards/389300-the-hobbit-play-booster-box-the-hobbit"
-            fluid
-            @keyup.enter="resolveLink"
-          />
-          <Button label="Find" icon="pi pi-search" :loading="resolving" :disabled="!link.trim()" @click="resolveLink" />
-        </div>
+    <div v-else class="field">
+      <label for="link">CardTrader link or id</label>
+      <div class="link-row">
+        <InputText
+          id="link"
+          v-model="link"
+          placeholder="https://www.cardtrader.com/en-EU/cards/389300-the-hobbit-play-booster-box-the-hobbit"
+          fluid
+          @keyup.enter="resolveLink"
+        />
+        <Button label="Find" icon="pi pi-search" :loading="resolving" :disabled="!link.trim()" @click="resolveLink" />
       </div>
-    </template>
+    </div>
 
     <div v-if="product" class="lookup">
       <img v-if="product.imageUrl" :src="product.imageUrl" :alt="product.name" class="sealed-thumb" />
@@ -286,7 +267,7 @@ async function save() {
       />
       <div v-if="preview" class="preview">
         <p v-if="preview.listing">
-          Current CT Zero price: <strong>{{ formatEuro(preview.listing.priceCents) }}</strong> —
+          Current CT Zero price: <strong class="mono">{{ formatEuro(preview.listing.priceCents) }}</strong> —
           {{ preview.listing.language.toUpperCase() }}
           <a :href="preview.listing.url" target="_blank" rel="noopener">open</a>
         </p>
@@ -297,13 +278,15 @@ async function save() {
             :key="preset.label"
             :label="`${preset.label} · ${formatEuro(preset.cents)}`"
             size="small"
+            severity="secondary"
             outlined
+            rounded
             @click="thresholdEuro = preset.cents / 100"
           />
         </div>
       </div>
       <div class="field">
-        <label for="threshold">Notification threshold</label>
+        <label for="threshold">Alert me at or under</label>
         <InputNumber
           v-model="thresholdEuro"
           input-id="threshold"
@@ -352,7 +335,7 @@ async function save() {
   gap: 0.5rem;
 }
 .pricing {
-  border-top: 1px solid #e5e7eb;
+  border-top: 1px solid var(--ct-line);
   padding-top: 1rem;
   margin-top: 0.5rem;
 }

@@ -99,7 +99,7 @@ describe('SyncService', () => {
     expect(result).toMatchObject({ status: 'ok', cardsDone: 2, cardsError: 0, reportSent: true });
     expect(telegram.sendMessage).toHaveBeenCalledTimes(1);
     const text = telegram.sendMessage.mock.calls[0]![0] as string;
-    expect(text).toContain('Below threshold');
+    expect(text).toContain('Below target');
     expect(text).toContain('Ragavan');
     expect(text).not.toContain('Bolt');
     expect(getCard(db, ragavan.id)).toMatchObject({
@@ -133,7 +133,7 @@ describe('SyncService', () => {
     const text = telegram.sendMessage.mock.calls[0]![0] as string;
     expect(text).toContain('❌');
     expect(text).toContain('HTTP 500');
-    expect(text).toContain('Below threshold');
+    expect(text).toContain('Below target');
   });
 
   it('401 error → run failed, a single alert, subsequent cards untouched', async () => {

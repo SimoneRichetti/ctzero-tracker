@@ -3,7 +3,7 @@ import { cardStatus, type PricedItem } from './card-status';
 /** Group shown in the cards page: every card, cards without a group, or one group. */
 export type GroupFilter = 'all' | 'none' | number;
 
-/** Reads `?group=`; unknown ids (e.g. a deleted group) and junk fall back to 'all'. */
+/** Reads a group from the route (`/groups/:id`, or the legacy `?group=`); unknown ids (e.g. a deleted group) and junk fall back to 'all'. */
 export function parseGroupFilter(raw: unknown, groupIds: number[]): GroupFilter {
   if (raw === 'none') return 'none';
   if (typeof raw !== 'string') return 'all';
@@ -11,8 +11,9 @@ export function parseGroupFilter(raw: unknown, groupIds: number[]): GroupFilter 
   return Number.isInteger(id) && groupIds.includes(id) ? id : 'all';
 }
 
-export function groupFilterQuery(f: GroupFilter): string | undefined {
-  return f === 'all' ? undefined : String(f);
+/** Route of a group view. */
+export function groupFilterPath(f: GroupFilter): string {
+  return f === 'all' ? '/cards' : f === 'none' ? '/cards/ungrouped' : `/groups/${f}`;
 }
 
 export function filterByGroup<T extends { groupId: number | null }>(cards: T[], f: GroupFilter): T[] {

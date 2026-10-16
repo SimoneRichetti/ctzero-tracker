@@ -1,250 +1,126 @@
 <script setup lang="ts">
-import { LANGUAGE_LABELS, formatEuro, type TrackedSealed, type TrackedSealedRow } from '@ctzero/shared';
+import type { BulkResult, TrackedSealed, TrackedSealedRow } from '@ctzero/shared';
 import Button from 'primevue/button';
-import Column from 'primevue/column';
-import DataTable from 'primevue/datatable';
-import Tag from 'primevue/tag';
 import { useConfirm } from 'primevue/useconfirm';
 import { useToast } from 'primevue/usetoast';
-import { computed, onMounted, ref } from 'vue';
-import { api } from '../api';
-import { STATUS_META, cardStatus, deltaPercent, formatDateTime, sortForDisplay } from '../card-status';
-import PriceHistoryDialog from '../components/PriceHistoryDialog.vue';
-import PriceSparkline from '../components/PriceSparkline.vue';
+import { computed, ref, watch } from 'vue';
+import { useRoute, useRouter } from 'vue-router';
+import { useCatalog } from '../catalog';
+import BulkBar from '../components/BulkBar.vue';
+import BulkThresholdDialog from '../components/BulkThresholdDialog.vue';
+import ItemDrawer from '../components/ItemDrawer.vue';
 import SealedDialog from '../components/SealedDialog.vue';
-import SyncHeader from '../components/SyncHeader.vue';
-import { formatChange } from '../price-history';
+import TrackedList from '../components/TrackedList.vue';
+import { bulkSealed } from '../sealed-bulk';
 
 const toast = useToast();
 const confirm = useConfirm();
-const items = ref<TrackedSealedRow[]>([]);
-const loading = ref(false);
-const dialogVisible = ref(false);
-const editing = ref<TrackedSealed | null>(null);
-const rows = computed(() => sortForDisplay(items.value));
+const route = useRoute();
+const router = useRouter();
+const { sealed, groups, loading, loaded, reloadSealed } = useCatalog();
 
-const PREVIEW_SIZE = 300;
-const preview = ref<{ src: string; alt: string; top: number; left: number } | null>(null);
+// ---------- detail panel (?item=) ----------
+const openId = computed(() => {
+  const raw = Number(route.query.item);
+  return Number.isInteger(raw) && raw > 0 ? raw : null;
+});
+const openItem = computed(() => sealed.value.find((s) => s.id === openId.value) ?? null);
+watch([openId, () => loaded.sealed, sealed], () => {
+  if (openId.value !== null && loaded.sealed && !openItem.value) closeItem();
+});
 
-// Stored images are CardTrader "preview_" thumbnails: "show_" is the larger version.
-function largeImage(url: string): string {
-  return url.replace('/preview_', '/show_');
+function openProduct(id: number) {
+  void router.replace({ query: { ...route.query, item: String(id) } });
 }
 
-function showPreview(event: MouseEvent, item: TrackedSealed) {
-  if (!item.imageUrl) return;
-  const rect = (event.currentTarget as HTMLElement).getBoundingClientRect();
-  const margin = 8;
-  const top = Math.min(
-    Math.max(margin, rect.top + rect.height / 2 - PREVIEW_SIZE / 2),
-    window.innerHeight - PREVIEW_SIZE - margin,
-  );
-  preview.value = { src: largeImage(item.imageUrl), alt: item.name, top, left: rect.right + 12 };
-}
-
-function hidePreview() {
-  preview.value = null;
-}
-
-async function load() {
-  loading.value = true;
-  try {
-    items.value = await api.get<TrackedSealedRow[]>('/api/sealed');
-  } catch (e) {
-    toast.add({ severity: 'error', summary: 'Error', detail: (e as Error).message, life: 5000 });
-  } finally {
-    loading.value = false;
-  }
-}
-
-function openNew() {
-  editing.value = null;
-  dialogVisible.value = true;
-}
-
-function openEdit(item: TrackedSealed) {
-  editing.value = item;
-  dialogVisible.value = true;
-}
-
-const historyVisible = ref(false);
-const historyTarget = ref<{ id: number; name: string } | null>(null);
-
-function openHistory(item: TrackedSealed) {
-  historyTarget.value = { id: item.id, name: item.name };
-  historyVisible.value = true;
+function closeItem() {
+  const { item: _item, ...rest } = route.query;
+  void router.replace({ query: rest });
 }
 
 function onSaved(item: TrackedSealed) {
   toast.add({ severity: 'success', summary: `${item.name} saved`, life: 3000 });
-  load();
+  void reloadSealed();
 }
 
-function confirmDelete(item: TrackedSealed) {
+function onDeleted(item: TrackedSealedRow) {
+  toast.add({ severity: 'success', summary: `Stopped tracking ${item.name}`, life: 3000 });
+  closeItem();
+  void reloadSealed();
+}
+
+// ---------- add ----------
+const addVisible = ref(false);
+
+function onAdded(item: TrackedSealed) {
+  toast.add({ severity: 'success', summary: `${item.name} added`, life: 3000 });
+  void reloadSealed();
+}
+
+// ---------- bulk ----------
+const selected = ref<TrackedSealedRow[]>([]);
+const thresholdVisible = ref(false);
+
+watch(sealed, (list) => {
+  const ids = new Set(selected.value.map((s) => s.id));
+  selected.value = list.filter((s) => ids.has(s.id));
+});
+
+function onBulkDone(result: BulkResult, verb = 'updated') {
+  const skipped = result.skipped.length > 0 ? `, ${result.skipped.length} skipped (${result.skipped[0]!.reason})` : '';
+  toast.add({
+    severity: result.skipped.length > 0 ? 'warn' : 'success',
+    summary: `${result.updated.length} products ${verb}${skipped}`,
+    life: 5000,
+  });
+  // Products that were skipped stay selected, so the action can be retried on them.
+  const skippedIds = new Set(result.skipped.map((s) => s.id));
+  selected.value = selected.value.filter((s) => skippedIds.has(s.id));
+  void reloadSealed();
+}
+
+function confirmBulkDelete() {
+  const items = [...selected.value];
   confirm.require({
-    message: `Stop tracking "${item.name}"?`,
+    message: `Stop tracking ${items.length} products?`,
     header: 'Confirm',
     icon: 'pi pi-exclamation-triangle',
-    acceptProps: { label: 'Delete', severity: 'danger' },
+    acceptProps: { label: 'Stop tracking', severity: 'danger' },
     rejectProps: { label: 'Cancel', severity: 'secondary', outlined: true },
-    accept: async () => {
-      try {
-        await api.del(`/api/sealed/${item.id}`);
-      } catch (e) {
-        toast.add({ severity: 'error', summary: 'Error', detail: (e as Error).message, life: 5000 });
-      }
-      await load();
-    },
+    accept: async () => onBulkDone(await bulkSealed(items, { type: 'delete' }), 'removed'),
   });
 }
-
-function filterChips(item: TrackedSealed): string[] {
-  return [
-    item.categoryName,
-    item.languages.length > 0 ? item.languages.map((l) => LANGUAGE_LABELS[l]).join(', ') : 'Any language',
-  ];
-}
-
-function formatDelta(item: TrackedSealed): string {
-  const d = deltaPercent(item);
-  if (d === null) return '—';
-  return `${d > 0 ? '+' : ''}${d.toLocaleString('en-US')}%`;
-}
-
-onMounted(load);
 </script>
 
 <template>
-  <div class="page-header">
-    <h1>Tracked sealed products</h1>
-    <Button label="Add sealed product" icon="pi pi-plus" @click="openNew" />
+  <div class="page">
+    <div class="page-head">
+      <div>
+        <div class="eyebrow">Sealed</div>
+        <h1 class="page-title">Sealed products</h1>
+      </div>
+      <div class="page-actions">
+        <Button label="Add product" icon="pi pi-plus" @click="addVisible = true" />
+      </div>
+    </div>
+
+    <TrackedList
+      v-model:selection="selected"
+      kind="sealed"
+      :items="sealed"
+      :loading="loading.sealed"
+      :open-id="openId"
+      empty-text='No tracked sealed products yet. Add one with "Add product".'
+      @open="openProduct"
+    />
+
+    <BulkBar v-if="selected.length > 0" :count="selected.length" @clear="selected = []">
+      <button type="button" @click="thresholdVisible = true"><i class="pi pi-bullseye" aria-hidden="true"></i>Set target</button>
+      <button type="button" class="danger" @click="confirmBulkDelete"><i class="pi pi-trash" aria-hidden="true"></i>Stop tracking</button>
+    </BulkBar>
   </div>
 
-  <SyncHeader @finished="load" />
-
-  <DataTable :value="rows" :loading="loading" data-key="id" striped-rows>
-    <template #empty>No tracked sealed products. Add one with "Add sealed product".</template>
-    <Column header="" style="width: 64px">
-      <template #body="{ data }">
-        <img
-          v-if="data.imageUrl"
-          :src="data.imageUrl"
-          :alt="data.name"
-          class="row-thumb"
-          @mouseenter="showPreview($event, data)"
-          @mouseleave="hidePreview"
-        />
-      </template>
-    </Column>
-    <Column field="name" header="Product">
-      <template #body="{ data }">
-        <strong>{{ data.name }}</strong>
-        <div class="muted">{{ data.expansionName }}</div>
-        <div class="chips">
-          <Tag v-for="chip in filterChips(data)" :key="chip" :value="chip" severity="secondary" />
-        </div>
-      </template>
-    </Column>
-    <Column header="CT Zero price">
-      <template #body="{ data }">
-        <template v-if="data.lastPriceCents !== null">
-          <strong>{{ formatEuro(data.lastPriceCents) }}</strong>
-          <div v-if="data.lastListing?.language" class="muted">{{ data.lastListing.language.toUpperCase() }}</div>
-        </template>
-        <span v-else>—</span>
-      </template>
-    </Column>
-    <Column header="Trend">
-      <template #body="{ data }">
-        <div class="trend-cell">
-          <PriceSparkline :points="data.trend.sparkline" @click="openHistory(data)" />
-          <span v-tooltip.top="'Change over 7 days'" :class="formatChange(data.trend.change7dPct).cls">
-            {{ formatChange(data.trend.change7dPct).text }}
-          </span>
-        </div>
-      </template>
-    </Column>
-    <Column header="Threshold">
-      <template #body="{ data }">{{ formatEuro(data.thresholdCents) }}</template>
-    </Column>
-    <Column header="Δ threshold">
-      <template #body="{ data }">
-        <span :class="(deltaPercent(data) ?? 0) <= 0 ? 'price-down' : 'price-up'">{{ formatDelta(data) }}</span>
-      </template>
-    </Column>
-    <Column header="Status">
-      <template #body="{ data }">
-        <Tag
-          v-tooltip.top="data.lastError ?? undefined"
-          :value="STATUS_META[cardStatus(data)].label"
-          :severity="STATUS_META[cardStatus(data)].severity"
-        />
-      </template>
-    </Column>
-    <Column header="Updated">
-      <template #body="{ data }">{{ formatDateTime(data.lastSyncedAt) }}</template>
-    </Column>
-    <Column header="" style="width: 11rem">
-      <template #body="{ data }">
-        <div class="row-actions">
-          <a :href="`https://www.cardtrader.com/cards/${data.blueprintId}`" target="_blank" rel="noopener">
-            <Button v-tooltip.top="'Open on CardTrader'" icon="pi pi-external-link" text rounded />
-          </a>
-          <Button v-tooltip.top="'Price history'" icon="pi pi-chart-line" text rounded @click="openHistory(data)" />
-          <Button v-tooltip.top="'Edit'" icon="pi pi-pencil" text rounded @click="openEdit(data)" />
-          <Button
-            v-tooltip.top="'Delete'"
-            icon="pi pi-trash"
-            text
-            rounded
-            severity="danger"
-            @click="confirmDelete(data)"
-          />
-        </div>
-      </template>
-    </Column>
-  </DataTable>
-
-  <SealedDialog v-model:visible="dialogVisible" :item="editing" @saved="onSaved" />
-  <PriceHistoryDialog
-    v-model:visible="historyVisible"
-    kind="sealed"
-    :id="historyTarget?.id ?? null"
-    :name="historyTarget?.name ?? ''"
-  />
-
-  <Teleport to="body">
-    <img
-      v-if="preview"
-      :src="preview.src"
-      :alt="preview.alt"
-      class="sealed-preview"
-      :style="{ top: `${preview.top}px`, left: `${preview.left}px`, width: `${PREVIEW_SIZE}px` }"
-    />
-  </Teleport>
+  <ItemDrawer kind="sealed" :item="openItem" :groups="groups" @close="closeItem" @saved="onSaved($event as TrackedSealed)" @deleted="onDeleted($event as TrackedSealedRow)" />
+  <SealedDialog v-model:visible="addVisible" @saved="onAdded" />
+  <BulkThresholdDialog v-model:visible="thresholdVisible" kind="sealed" :items="selected" @done="(r) => onBulkDone(r)" />
 </template>
-
-<style scoped>
-.page-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-}
-.row-actions {
-  display: flex;
-  align-items: center;
-}
-.row-thumb {
-  cursor: zoom-in;
-}
-.sealed-preview {
-  position: fixed;
-  z-index: 1100;
-  max-height: 300px;
-  object-fit: contain;
-  background: #fff;
-  border-radius: 12px;
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
-  pointer-events: none;
-}
-</style>

@@ -53,20 +53,20 @@ function itemLine(item: ReportItem): string {
   const e = item.event;
   switch (e.kind) {
     case 'below':
-      return `• ${name}${describeListing(item.kind, item.listing)} — ${formatEuro(e.priceCents)} (threshold ${formatEuro(e.thresholdCents)}, ${formatEuro(e.thresholdCents - e.priceCents)} below)${link(item.listing)}`;
+      return `• ${name}${describeListing(item.kind, item.listing)} — ${formatEuro(e.priceCents)} (target ${formatEuro(e.thresholdCents)}, ${formatEuro(e.thresholdCents - e.priceCents)} below)${link(item.listing)}`;
     case 'further_drop':
       return `• ${name}${describeListing(item.kind, item.listing)} — ${formatEuro(e.priceCents)} (was ${formatEuro(e.previousCents)})${link(item.listing)}`;
     case 'back_above':
       return e.priceCents === null
-        ? `• ${name} — no valid CT Zero offers (threshold ${formatEuro(e.thresholdCents)})`
-        : `• ${name} — ${formatEuro(e.priceCents)} (threshold ${formatEuro(e.thresholdCents)})`;
+        ? `• ${name} — no valid CT Zero offers (target ${formatEuro(e.thresholdCents)})`
+        : `• ${name} — ${formatEuro(e.priceCents)} (target ${formatEuro(e.thresholdCents)})`;
   }
 }
 
 const SECTIONS: { kind: AlertEvent['kind']; title: string }[] = [
-  { kind: 'below', title: '🟢 <b>Below threshold</b>' },
+  { kind: 'below', title: '🟢 <b>Below target</b>' },
   { kind: 'further_drop', title: '📉 <b>Further drop</b>' },
-  { kind: 'back_above', title: '🔁 <b>Back above threshold</b>' },
+  { kind: 'back_above', title: '🔁 <b>Back above target</b>' },
 ];
 
 export function buildReport(items: ReportItem[], errors: ReportError[], at: Date): string | null {

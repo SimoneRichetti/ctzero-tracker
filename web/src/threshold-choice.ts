@@ -1,10 +1,10 @@
 import { MIN_THRESHOLD_CENTS, euroToCents } from '@ctzero/shared';
 
-/** How a threshold is set for several cards at once: below each card's current price, or one amount for all. */
+/** How a target (threshold) is set for several items at once: below each card's current price, or one amount for all. */
 export type ThresholdChoice = { mode: 'percent'; percent: number } | { mode: 'fixed'; cents: number };
 
 export const THRESHOLD_MODE_OPTIONS: { label: string; value: ThresholdChoice['mode'] }[] = [
-  { label: '% below current price', value: 'percent' },
+  { label: '% under current price', value: 'percent' },
   { label: 'Fixed amount', value: 'fixed' },
 ];
 

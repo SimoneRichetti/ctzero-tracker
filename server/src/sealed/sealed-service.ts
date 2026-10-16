@@ -1,11 +1,12 @@
-import type {
-  PreviewResult,
-  PriceHistoryDto,
-  SealedInput,
-  SealedPreview,
-  SealedUpdate,
-  TrackedSealed,
-  TrackedSealedRow,
+import {
+  thresholdPresets,
+  type PreviewResult,
+  type PriceHistoryDto,
+  type SealedInput,
+  type SealedPreview,
+  type SealedUpdate,
+  type TrackedSealed,
+  type TrackedSealedRow,
 } from '@ctzero/shared';
 import { evaluateSilently } from '../alerts/rules';
 import type { SealedCatalog } from '../catalog/sealed-catalog';
@@ -22,7 +23,6 @@ import {
   updateSealed,
 } from '../db/sealed-repo';
 import { NotFoundError, errorMessage } from '../errors';
-import { thresholdPresets } from '../pricing/presets';
 import { priceSealed } from '../pricing/sealed-pricer';
 import { computeTrend, trendSince } from '../pricing/trend';
 

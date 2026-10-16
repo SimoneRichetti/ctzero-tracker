@@ -1,5 +1,6 @@
 import {
   percentBelow,
+  thresholdPresets,
   type BulkCards,
   type BulkResult,
   type CardBlueprint,
@@ -29,7 +30,6 @@ import { transaction, type Db } from '../db/db';
 import { getGroup } from '../db/groups-repo';
 import { NotFoundError, ValidationError, errorMessage } from '../errors';
 import { priceCard } from '../pricing/card-pricer';
-import { thresholdPresets } from '../pricing/presets';
 import { computeTrend, trendSince } from '../pricing/trend';
 
 export interface CardServiceDeps {

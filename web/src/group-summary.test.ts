@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { filterByGroup, groupFilterQuery, parseGroupFilter, summarize } from './group-summary';
+import { filterByGroup, groupFilterPath, parseGroupFilter, summarize } from './group-summary';
 
 describe('parseGroupFilter', () => {
   it('reads all / none / existing ids', () => {
@@ -14,10 +14,10 @@ describe('parseGroupFilter', () => {
     expect(parseGroupFilter(['1'], [1])).toBe('all');
   });
 
-  it('round-trips through the query', () => {
-    expect(groupFilterQuery('all')).toBeUndefined();
-    expect(groupFilterQuery('none')).toBe('none');
-    expect(groupFilterQuery(3)).toBe('3');
+  it('maps to the routes', () => {
+    expect(groupFilterPath('all')).toBe('/cards');
+    expect(groupFilterPath('none')).toBe('/cards/ungrouped');
+    expect(groupFilterPath(3)).toBe('/groups/3');
   });
 });
 
@@ -32,7 +32,7 @@ describe('filterByGroup', () => {
 
 describe('summarize', () => {
   const base = { name: 'x', lastSyncStatus: 'ok' as const, alertState: 'above' as const };
-  it('counts statuses and sums prices and thresholds', () => {
+  it('counts statuses and sums prices and targets', () => {
     const s = summarize([
       { ...base, thresholdCents: 1000, lastPriceCents: 900, alertState: 'below' },
       { ...base, thresholdCents: 500, lastPriceCents: 700 },

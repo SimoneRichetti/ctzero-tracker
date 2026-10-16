@@ -1,4 +1,5 @@
-import { percentBelow, type Preset } from '@ctzero/shared';
+import { percentBelow } from './money';
+import type { Preset } from './types';
 
 const DISCOUNTS = [10, 20, 30];
 const ONE_EURO_CENTS = 100;

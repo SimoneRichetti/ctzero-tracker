@@ -4,7 +4,6 @@ import {
   axisBounds,
   buildSeries,
   filterRange,
-  formatChange,
   formatDay,
   hasChartData,
   sparklinePoints,
@@ -111,15 +110,6 @@ describe('sparklinePoints', () => {
 
   it('fewer than 2 points → empty', () => {
     expect(sparklinePoints([{ t: daysAgo(0), priceCents: 100 }], 80, 24)).toBe('');
-  });
-});
-
-describe('formatChange', () => {
-  it('sign, one decimal and color class', () => {
-    expect(formatChange(-12.3)).toEqual({ text: '-12.3%', cls: 'price-down' });
-    expect(formatChange(5)).toEqual({ text: '+5.0%', cls: 'price-up' });
-    expect(formatChange(0)).toEqual({ text: '0.0%', cls: '' });
-    expect(formatChange(null)).toEqual({ text: '—', cls: '' });
   });
 });
 
