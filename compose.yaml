@@ -2,6 +2,7 @@ services:
   ctzero-tracker:
     build: .
     image: ctzero-tracker
+    container_name: ctzero-tracker
     restart: unless-stopped
     env_file: .env
     environment:
