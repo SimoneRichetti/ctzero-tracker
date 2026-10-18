@@ -68,8 +68,10 @@ async function create() {
         <rect x="3" y="5" width="13" height="18" rx="2.5" fill="none" stroke="var(--ct-muted)" stroke-width="1.6" />
         <rect x="9" y="2" width="13" height="18" rx="2.5" fill="var(--ct-accent)" />
       </svg>
-      <span class="brand-name">CTZero</span>
-      <span class="brand-sub">Tracker</span>
+      <span class="brand-text">
+        <span class="brand-name">CTZero</span>
+        <span class="brand-sub">Tracker</span>
+      </span>
       <Button
         v-tooltip.bottom="isDark ? 'Light theme' : 'Dark theme'"
         :aria-label="isDark ? 'Switch to light theme' : 'Switch to dark theme'"
@@ -160,8 +162,14 @@ async function create() {
   gap: 8px;
   padding-left: 8px;
 }
-.brand-name {
+/* The two words have different sizes: align them on the baseline, not on the centre. */
+.brand-text {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
   margin-left: 2px;
+}
+.brand-name {
   font-weight: 600;
   font-size: 16px;
   letter-spacing: -0.01em;

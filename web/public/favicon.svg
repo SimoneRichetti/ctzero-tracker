@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="26" height="26" viewBox="0 0 26 26">
+  <style>
+    .back { stroke: #5a5f69; }
+    .front { fill: #0b7a62; }
+    @media (prefers-color-scheme: dark) {
+      .back { stroke: #a0a6b0; }
+      .front { fill: #3fd0a6; }
+    }
+  </style>
+  <rect class="back" x="3" y="5" width="13" height="18" rx="2.5" fill="none" stroke-width="1.8" />
+  <rect class="front" x="9" y="2" width="13" height="18" rx="2.5" />
+</svg>
