@@ -2,6 +2,12 @@
 
 Tracks the minimum **CardTrader Zero** price of Magic cards and sealed products (booster boxes, boosters, bundles, Commander precons, Secret Lairs, ...) and notifies you on Telegram when it drops below your chosen threshold.
 
+## Screenshots
+
+![Cards page with groups, targets and 7-day trends](docs/img/cards.png)
+
+![Card detail panel with price history and alert threshold](docs/img/detail.png)
+
 ## Requirements
 - Node.js 24 or later
 
