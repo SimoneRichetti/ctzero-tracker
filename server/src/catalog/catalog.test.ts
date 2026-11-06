@@ -53,6 +53,31 @@ describe('Catalog.lookup', () => {
     ]);
   });
 
+  it('a set code CardTrader does not use is matched by name, including its sub-expansions', async () => {
+    ct.expansions.mockResolvedValue([
+      ...expansions,
+      { id: 10, game_id: 1, code: 'plist', name: 'The List' },
+      { id: 11, game_id: 1, code: 'plist2', name: 'The List - Mystery Booster 2' },
+      { id: 12, game_id: 1, code: 'tlx', name: 'The Listening' },
+    ]);
+    scryfall.prints.mockResolvedValue([print('s-mh2', 'mh2'), { ...print('s-list', 'plst'), set_name: 'The List' }]);
+    ct.blueprints.mockImplementation(async (id: number) =>
+      id === 11 ? [{ id: 1100, name: 'Ragavan', expansion_id: 11, scryfall_id: 's-list' }] : (blueprintsByExpansion[id] ?? []),
+    );
+    const lookup = await catalog.lookup('ragavan');
+    expect(lookup.printings.map((p) => p.expansionId)).toEqual([1, 10, 11]);
+    expect(await catalog.resolveBlueprints(lookup, [])).toEqual([
+      { blueprintId: 100, expansionId: 1, expansionName: 'Modern Horizons 2' },
+      { blueprintId: 1100, expansionId: 11, expansionName: 'The List - Mystery Booster 2' },
+    ]);
+  });
+
+  it('an exact code match is not widened by name', async () => {
+    ct.expansions.mockResolvedValue([...expansions, { id: 4, game_id: 1, code: 'mh2p', name: 'Modern Horizons 2 Promos' }]);
+    scryfall.prints.mockResolvedValue([{ ...print('s-mh2', 'mh2'), set_name: 'Modern Horizons 2' }]);
+    expect((await catalog.lookup('ragavan')).printings.map((p) => p.expansionId)).toEqual([1]);
+  });
+
   it('card not found on Scryfall → NotFoundError', async () => {
     scryfall.named.mockRejectedValueOnce(new HttpError(404, 'HTTP 404 da api.scryfall.com'));
     await expect(catalog.lookup('Xyz')).rejects.toBeInstanceOf(NotFoundError);
@@ -116,6 +141,14 @@ describe('Catalog.resolveBlueprints', () => {
   it('without matched blueprints throws ValidationError', async () => {
     const lookup = await catalog.lookup('ragavan');
     await expect(catalog.resolveBlueprints(lookup, [99])).rejects.toBeInstanceOf(ValidationError);
+    await expect(catalog.resolveBlueprints(lookup, [99])).rejects.toThrow('for the selected expansions');
+  });
+
+  it('with "any" expansion and no blueprint on CardTrader does not mention selected expansions', async () => {
+    const lookup = await catalog.lookup('ragavan');
+    ct.blueprints.mockResolvedValue([]);
+    await expect(catalog.resolveBlueprints(lookup, [])).rejects.toThrow(`No printings of "${lookup.name}" found on CardTrader`);
+    await expect(catalog.resolveBlueprints(lookup, [])).rejects.not.toThrow('selected');
   });
 
   it('caches blueprints per expansion for 1 hour', async () => {

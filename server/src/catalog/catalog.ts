@@ -21,6 +21,28 @@ export interface CardLookup {
   scryfallIdsByExpansion: Map<number, Set<string>>;
 }
 
+function normalizeName(name: string): string {
+  return name
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, ' ')
+    .trim();
+}
+
+/**
+ * CardTrader expansions that may hold the printings of a Scryfall set whose code CardTrader does not use:
+ * same name, or the name followed by more words. Scryfall's "The List" (plst) is split on CardTrader into
+ * "The List" (plist), "The List - Mystery Booster 2" (plist2), ... Blueprints are still matched by Scryfall id,
+ * so an extra candidate never adds a wrong printing.
+ */
+function expansionsNamedLike(expansions: CtExpansion[], setName: string): CtExpansion[] {
+  const wanted = normalizeName(setName);
+  if (!wanted) return [];
+  return expansions.filter((e) => {
+    const n = normalizeName(e.name);
+    return n === wanted || n.startsWith(`${wanted} `);
+  });
+}
+
 export class Catalog {
   private expansionsCache: { fetchedAt: number; list: CtExpansion[] } | null = null;
   private readonly blueprintsCache = new Map<number, { fetchedAt: number; list: SlimBlueprint[] }>();
@@ -81,19 +103,21 @@ export class Catalog {
   private async fetchLookup(name: string): Promise<CardLookup> {
     const card = await this.named(name);
     const prints = await this.scryfall.prints(card.oracle_id);
-    const byCode = new Map((await this.mtgExpansions()).map((e) => [e.code.toLowerCase(), e]));
+    const expansions = await this.mtgExpansions();
+    const byCode = new Map(expansions.map((e) => [e.code.toLowerCase(), e]));
     const printings: Printing[] = [];
     const ids = new Map<number, Set<string>>();
     for (const p of prints) {
-      const exp = byCode.get(p.set.toLowerCase());
-      if (!exp) continue;
-      let set = ids.get(exp.id);
-      if (!set) {
-        set = new Set();
-        ids.set(exp.id, set);
-        printings.push({ expansionId: exp.id, expansionName: exp.name, code: exp.code });
+      const exact = byCode.get(p.set.toLowerCase());
+      for (const exp of exact ? [exact] : expansionsNamedLike(expansions, p.set_name)) {
+        let set = ids.get(exp.id);
+        if (!set) {
+          set = new Set();
+          ids.set(exp.id, set);
+          printings.push({ expansionId: exp.id, expansionName: exp.name, code: exp.code });
+        }
+        set.add(p.id);
       }
-      set.add(p.id);
     }
     return { name: card.name, oracleId: card.oracle_id, imageUrl: cardImage(card), printings, scryfallIdsByExpansion: ids };
   }
@@ -113,7 +137,11 @@ export class Catalog {
       }
     }
     if (out.length === 0) {
-      throw new ValidationError(`No printings of "${lookup.name}" found on CardTrader for the selected expansions`);
+      throw new ValidationError(
+        expansionIds.length > 0
+          ? `No printings of "${lookup.name}" found on CardTrader for the selected expansions`
+          : `No printings of "${lookup.name}" found on CardTrader`,
+      );
     }
     return out;
   }
