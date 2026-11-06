@@ -2,24 +2,26 @@ import type { PriceTrend } from '@ctzero/shared';
 import { cardStatus, deltaPercent, sortForDisplay, type CardStatus, type PricedItem } from './card-status';
 
 /** Status filter of the list views. "pending" items only show under "all". */
-export type StatusTab = 'all' | 'below' | 'watching' | 'attention';
+export type StatusTab = 'all' | 'below' | 'watching' | 'attention' | 'bought';
 
 export const STATUS_TABS: { value: StatusTab; label: string }[] = [
   { value: 'all', label: 'All' },
   { value: 'below', label: 'Below target' },
   { value: 'watching', label: 'Watching' },
   { value: 'attention', label: 'Needs attention' },
+  { value: 'bought', label: 'Bought' },
 ];
 
 export function tabOf(status: CardStatus): Exclude<StatusTab, 'all'> | null {
   if (status === 'below') return 'below';
   if (status === 'above') return 'watching';
   if (status === 'no_offers' || status === 'error') return 'attention';
+  if (status === 'bought') return 'bought';
   return null;
 }
 
 export function tabCounts(items: PricedItem[]): Record<StatusTab, number> {
-  const counts: Record<StatusTab, number> = { all: items.length, below: 0, watching: 0, attention: 0 };
+  const counts: Record<StatusTab, number> = { all: items.length, below: 0, watching: 0, attention: 0, bought: 0 };
   for (const item of items) {
     const tab = tabOf(cardStatus(item));
     if (tab) counts[tab]++;

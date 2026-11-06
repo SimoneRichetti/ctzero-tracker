@@ -23,6 +23,9 @@ function card(overrides: Partial<TrackedCard>): TrackedCard {
     alertState: null,
     lastNotifiedPriceCents: null,
     blueprintsResolvedAt: null,
+    startPriceCents: null,
+    startPriceAt: null,
+    purchase: null,
     createdAt: '',
     updatedAt: '',
     ...overrides,
@@ -30,6 +33,12 @@ function card(overrides: Partial<TrackedCard>): TrackedCard {
 }
 
 describe('cardStatus', () => {
+  it('a bought card is "bought" whatever its last update', () => {
+    const purchase = { pricePaidCents: 100, startPriceCents: null, savedCents: null, purchasedAt: '' };
+    expect(cardStatus(card({ lastSyncStatus: 'error', purchase }))).toBe('bought');
+    expect(cardStatus(card({ lastSyncStatus: 'ok', alertState: 'below', purchase }))).toBe('bought');
+  });
+
   it('covers all cases', () => {
     expect(cardStatus(card({}))).toBe('pending');
     expect(cardStatus(card({ lastSyncStatus: 'error', alertState: 'below' }))).toBe('error');

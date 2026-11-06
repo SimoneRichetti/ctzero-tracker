@@ -67,7 +67,10 @@ export class SyncService {
     const { db } = this.deps;
     const running = getRunningRun(db);
     if (running) return { started: false, run: running };
-    const cardIds = listCards(db).map((c) => c.id);
+    // Bought cards are no longer updated nor alerted.
+    const cardIds = listCards(db)
+      .filter((c) => c.purchase === null)
+      .map((c) => c.id);
     const sealedIds = listSealed(db).map((s) => s.id);
     const run = startRun(db, trigger, cardIds.length + sealedIds.length, this.now());
     this.active = this.execute(run.id, cardIds, sealedIds).finally(() => {
@@ -98,7 +101,7 @@ export class SyncService {
 
       for (const id of cardIds) {
         const card = getCard(db, id); // null if deleted during the run
-        if (card) {
+        if (card && !card.purchase) {
           const fatal = await this.runItem(
             'card',
             card.name,
@@ -200,7 +203,8 @@ export class SyncService {
     const applied = transaction(db, () => {
       // The card may have been deleted or modified while we were pricing it: in that case
       // the result is based on stale data and must not be written (or notified).
-      if (!isUnchanged(getCard(db, card.id), card)) return false;
+      const latest = getCard(db, card.id);
+      if (!isUnchanged(latest, card) || latest?.purchase) return false;
       insertSnapshot(db, { cardId: card.id, configVersion: card.configVersion, syncedAt: iso, priceCents });
       updateCard(
         db,

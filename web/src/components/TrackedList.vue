@@ -29,6 +29,8 @@ const props = defineProps<{
   groupNames?: Map<number, string>;
   openId: number | null;
   emptyText: string;
+  /** Savings to show instead of those of `items` (the "All cards" view also counts cards no longer tracked). */
+  savings?: { savedCents: number; count: number };
 }>();
 const selection = defineModel<R[]>('selection', { required: true });
 const emit = defineEmits<{ open: [id: number] }>();
@@ -67,7 +69,11 @@ watch([tab, () => route.query.q], () => (selection.value = []));
 const summary = computed(() => summarize(props.items));
 const searched = computed(() => props.items.filter((i) => matchesSearch(i.name, search.value)));
 const counts = computed(() => tabCounts(searched.value));
-const tabOptions = computed(() => STATUS_TABS.map((t) => ({ ...t, count: counts.value[t.value] })));
+// Only cards can be bought.
+const tabOptions = computed(() =>
+  STATUS_TABS.filter((t) => props.kind === 'card' || t.value !== 'bought').map((t) => ({ ...t, count: counts.value[t.value] })),
+);
+const saved = computed(() => props.savings ?? { savedCents: summary.value.savedCents, count: summary.value.bought });
 const rows = computed(() => sortItems(filterByTab(searched.value, tab.value), sort.value));
 
 /** Display values of each visible row, computed once per change instead of on every render. */
@@ -115,6 +121,7 @@ function showPreview(event: MouseEvent, row: Row) {
     <div class="kpi">
       <div class="kpi-label">Tracked</div>
       <div class="kpi-value mono">{{ summary.count }}</div>
+      <div v-if="summary.bought > 0" class="kpi-sub">+ {{ summary.bought }} bought</div>
     </div>
     <div class="kpi">
       <div class="kpi-label">Below target</div>
@@ -132,6 +139,11 @@ function showPreview(event: MouseEvent, row: Row) {
       <div class="kpi-label">Needs attention</div>
       <div class="kpi-value mono" :class="{ warn: summary.problems > 0 }">{{ summary.problems }}</div>
       <div class="kpi-sub">no offers or failed update</div>
+    </div>
+    <div v-if="kind === 'card'" class="kpi">
+      <div class="kpi-label">Total saved</div>
+      <div class="kpi-value mono" :class="{ accent: saved.savedCents > 0 }">{{ formatEuro(saved.savedCents) }}</div>
+      <div class="kpi-sub">{{ saved.count === 1 ? 'on 1 card bought' : `on ${saved.count} cards bought` }}</div>
     </div>
   </div>
 
@@ -193,7 +205,8 @@ function showPreview(event: MouseEvent, row: Row) {
     <Column header="Target" style="width: 11.5rem">
       <template #body="{ data }">
         <div class="mono">{{ formatEuro(data.thresholdCents) }}</div>
-        <TargetGap :item="data" />
+        <div v-if="data.purchase" class="paid">paid <span class="mono">{{ formatEuro(data.purchase.pricePaidCents) }}</span></div>
+        <TargetGap v-else :item="data" />
       </template>
     </Column>
     <Column header="7 days" style="width: 10rem">
@@ -373,6 +386,11 @@ function showPreview(event: MouseEvent, row: Row) {
 }
 .pill {
   margin-top: 3px;
+}
+.paid {
+  margin-top: 3px;
+  font-size: 12px;
+  color: var(--ct-muted);
 }
 .listing {
   max-width: 11rem;

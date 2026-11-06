@@ -9,6 +9,7 @@ import type {
 } from '@ctzero/shared';
 import { NotFoundError } from '../errors';
 import { transaction, type Db } from './db';
+import { toPurchase } from './purchases-repo';
 
 type SqlValue = string | number | null;
 
@@ -32,6 +33,12 @@ interface CardRecord {
   alert_state: string | null;
   last_notified_price_cents: number | null;
   blueprints_resolved_at: string | null;
+  start_price_cents: number | null;
+  start_price_at: string | null;
+  /** From the LEFT JOIN with card_purchases (null = not bought). */
+  p_paid: number | null;
+  p_start: number | null;
+  p_at: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -48,7 +55,7 @@ export interface NewCard {
   groupId?: number | null;
 }
 
-export type CardPatch = Partial<Omit<TrackedCard, 'id' | 'createdAt' | 'updatedAt' | 'expansionNames'>>;
+export type CardPatch = Partial<Omit<TrackedCard, 'id' | 'createdAt' | 'updatedAt' | 'expansionNames' | 'purchase'>>;
 
 const COLUMNS: Record<keyof CardPatch, string> = {
   name: 'name',
@@ -69,7 +76,14 @@ const COLUMNS: Record<keyof CardPatch, string> = {
   alertState: 'alert_state',
   lastNotifiedPriceCents: 'last_notified_price_cents',
   blueprintsResolvedAt: 'blueprints_resolved_at',
+  startPriceCents: 'start_price_cents',
+  startPriceAt: 'start_price_at',
 };
+
+/** Cards with their purchase, if any. */
+const SELECT_CARDS = `
+  SELECT c.*, p.price_paid_cents AS p_paid, p.start_price_cents AS p_start, p.purchased_at AS p_at
+  FROM tracked_cards c LEFT JOIN card_purchases p ON p.tracked_card_id = c.id`;
 
 function encode(key: keyof CardPatch, value: unknown): SqlValue {
   if (value === null || value === undefined) return null;
@@ -108,18 +122,24 @@ function toCard(db: Db, r: CardRecord): TrackedCard {
     alertState: r.alert_state as AlertState | null,
     lastNotifiedPriceCents: r.last_notified_price_cents,
     blueprintsResolvedAt: r.blueprints_resolved_at,
+    startPriceCents: r.start_price_cents,
+    startPriceAt: r.start_price_at,
+    purchase:
+      r.p_paid === null || r.p_at === null
+        ? null
+        : toPurchase({ start_price_cents: r.p_start, price_paid_cents: r.p_paid, purchased_at: r.p_at }),
     createdAt: r.created_at,
     updatedAt: r.updated_at,
   };
 }
 
 export function listCards(db: Db): TrackedCard[] {
-  const rows = db.prepare('SELECT * FROM tracked_cards ORDER BY name COLLATE NOCASE, id').all() as unknown as CardRecord[];
+  const rows = db.prepare(`${SELECT_CARDS} ORDER BY c.name COLLATE NOCASE, c.id`).all() as unknown as CardRecord[];
   return rows.map((r) => toCard(db, r));
 }
 
 export function getCard(db: Db, id: number): TrackedCard | null {
-  const row = db.prepare('SELECT * FROM tracked_cards WHERE id = ?').get(id) as unknown as CardRecord | undefined;
+  const row = db.prepare(`${SELECT_CARDS} WHERE c.id = ?`).get(id) as unknown as CardRecord | undefined;
   return row ? toCard(db, row) : null;
 }
 
@@ -189,13 +209,20 @@ export interface Snapshot {
   priceCents: number | null;
 }
 
+/** Also records the start price of the card, if this is its first price. */
 export function insertSnapshot(db: Db, s: Snapshot & { cardId: number }): void {
-  db.prepare('INSERT INTO price_snapshots (tracked_card_id, config_version, synced_at, price_cents) VALUES (?, ?, ?, ?)').run(
-    s.cardId,
-    s.configVersion,
-    s.syncedAt,
-    s.priceCents,
-  );
+  transaction(db, () => {
+    db.prepare('INSERT INTO price_snapshots (tracked_card_id, config_version, synced_at, price_cents) VALUES (?, ?, ?, ?)').run(
+      s.cardId,
+      s.configVersion,
+      s.syncedAt,
+      s.priceCents,
+    );
+    if (s.priceCents === null) return;
+    db.prepare(
+      'UPDATE tracked_cards SET start_price_cents = ?, start_price_at = ? WHERE id = ? AND start_price_cents IS NULL',
+    ).run(s.priceCents, s.syncedAt, s.cardId);
+  });
 }
 
 export function listSnapshots(db: Db, cardId: number): Snapshot[] {

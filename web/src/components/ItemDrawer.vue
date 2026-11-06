@@ -29,8 +29,8 @@ import { api } from '../api';
 import { FINISH_OPTIONS, fromFinish, toFinish } from '../finish-choice';
 import { cardStatus } from '../card-status';
 import { latestRequest } from '../latest-request';
-import { cardTraderUrl as cardTraderLink, gapSentence, largeImageUrl, listingLine, targetGap } from '../row-format';
-import { formatWhen } from '../time-format';
+import { cardTraderUrl as cardTraderLink, gapSentence, largeImageUrl, listingLine, savingText, sinceStart, targetGap } from '../row-format';
+import { dayLabel, formatWhen } from '../time-format';
 import PriceHistoryChart from './PriceHistoryChart.vue';
 import StatusPill from './StatusPill.vue';
 
@@ -38,7 +38,13 @@ type Row = TrackedCardRow | TrackedSealedRow;
 
 /** `item` null = closed. The page owns which item is open (`?item=` in the route). */
 const props = defineProps<{ kind: 'card' | 'sealed'; item: Row | null; groups: CardGroup[] }>();
-const emit = defineEmits<{ close: []; saved: [item: TrackedCard | TrackedSealed]; deleted: [item: Row] }>();
+const emit = defineEmits<{
+  close: [];
+  saved: [item: TrackedCard | TrackedSealed];
+  deleted: [item: Row];
+  /** `bought` false = the purchase was undone. */
+  purchased: [card: TrackedCard, bought: boolean];
+}>();
 const confirm = useConfirm();
 
 const conditionOptions = [...CONDITIONS];
@@ -100,6 +106,7 @@ watch(
     if (!item) return;
     if (item.id !== previous?.id) {
       resetFrom(item);
+      resetPaid(item);
       void loadPrintings(item);
     } else if (!dirty.value) {
       resetFrom(item);
@@ -227,6 +234,58 @@ async function save() {
   }
 }
 
+// ---------- start price and purchase (cards only) ----------
+const paidEuro = ref<number | null>(null);
+const purchasing = ref(false);
+
+/** The price paid defaults to the current price, which is what the user most likely paid. */
+function resetPaid(item: Row | TrackedCard) {
+  const c = props.kind === 'card' ? (item as TrackedCard) : null;
+  const cents = c ? (c.lastPriceCents ?? c.startPriceCents) : null;
+  paidEuro.value = cents === null ? null : cents / 100;
+}
+
+const start = computed(() => {
+  const c = card.value;
+  if (!c || c.startPriceCents === null) return null;
+  const since = c.startPriceAt ? dayLabel(c.startPriceAt, new Date()) : null;
+  const sinceText = since ? `since ${since === 'Today' || since === 'Yesterday' ? since.toLowerCase() : since}` : null;
+  return { cents: c.startPriceCents, sub: [sinceText, sinceStart(c)].filter(Boolean).join(' · ') };
+});
+
+/** What marking the card as bought at `paidEuro` would save. */
+const savingPreview = computed(() => {
+  const c = card.value;
+  if (!c || paidEuro.value === null || c.startPriceCents === null) return null;
+  return savingText(c.startPriceCents - euroToCents(paidEuro.value));
+});
+
+const purchaseDay = computed(() => {
+  const p = card.value?.purchase;
+  if (!p) return '';
+  const day = dayLabel(p.purchasedAt, new Date());
+  return day === 'Today' || day === 'Yesterday' ? day.toLowerCase() : `on ${day}`;
+});
+
+async function setPurchase(bought: boolean) {
+  const c = card.value;
+  if (!c || purchasing.value) return;
+  if (bought && (paidEuro.value === null || euroToCents(paidEuro.value) < 1)) return;
+  purchasing.value = true;
+  error.value = null;
+  try {
+    const updated = bought
+      ? await api.put<TrackedCard>(`/api/cards/${c.id}/purchase`, { pricePaidCents: euroToCents(paidEuro.value!) })
+      : await api.del<TrackedCard>(`/api/cards/${c.id}/purchase`);
+    if (!bought) resetPaid(updated);
+    emit('purchased', updated, bought);
+  } catch (e) {
+    error.value = (e as Error).message;
+  } finally {
+    purchasing.value = false;
+  }
+}
+
 function remove() {
   const item = props.item;
   if (!item) return;
@@ -275,7 +334,12 @@ function remove() {
           </div>
         </header>
 
-        <div class="figures">
+        <div class="figures" :class="{ three: kind === 'card' }">
+          <div v-if="kind === 'card'">
+            <div class="figure-label">Start price</div>
+            <div class="figure mono">{{ start ? formatEuro(start.cents) : '—' }}</div>
+            <div class="figure-sub">{{ start ? start.sub : 'set by the first price found' }}</div>
+          </div>
           <div>
             <div class="figure-label">CT Zero price</div>
             <div class="figure mono">{{ item.lastPriceCents === null ? '—' : formatEuro(item.lastPriceCents) }}</div>
@@ -290,6 +354,54 @@ function remove() {
 
         <div class="section">
           <PriceHistoryChart :kind="kind" :id="item.id" :refresh-key="refreshKey" />
+        </div>
+
+        <div v-if="card" class="section purchase">
+          <template v-if="card.purchase">
+            <div class="section-head">
+              <div class="section-title">
+                <i class="pi pi-check-circle" aria-hidden="true"></i>
+                Bought {{ purchaseDay }} for <span class="mono">{{ formatEuro(card.purchase.pricePaidCents) }}</span>
+              </div>
+              <Button label="Undo" size="small" text severity="secondary" :loading="purchasing" @click="setPurchase(false)" />
+            </div>
+            <div class="purchase-line" :class="{ under: (card.purchase.savedCents ?? 0) > 0 }">
+              <template v-if="card.purchase.savedCents !== null">
+                {{ savingText(card.purchase.savedCents) }} on the start price of
+                <span class="mono">{{ formatEuro(card.purchase.startPriceCents!) }}</span>
+              </template>
+              <template v-else>No start price was recorded, so this purchase adds nothing to the savings.</template>
+            </div>
+            <div class="hint">Updates and alerts are paused for this card.</div>
+          </template>
+          <template v-else>
+            <div class="section-head">
+              <label for="drawer-paid" class="section-title">Bought it?</label>
+              <div class="hint">stops updates and alerts</div>
+            </div>
+            <div class="purchase-form">
+              <InputNumber
+                v-model="paidEuro"
+                input-id="drawer-paid"
+                mode="currency"
+                currency="EUR"
+                locale="en-US"
+                :min="0.01"
+                placeholder="Price paid"
+                class="target-input"
+              />
+              <Button
+                label="Mark as bought"
+                icon="pi pi-shopping-cart"
+                severity="secondary"
+                outlined
+                :disabled="paidEuro === null || paidEuro <= 0"
+                :loading="purchasing"
+                @click="setPurchase(true)"
+              />
+            </div>
+            <div v-if="savingPreview" class="purchase-line">{{ savingPreview }} on the start price</div>
+          </template>
         </div>
 
         <div class="section">
@@ -497,6 +609,32 @@ function remove() {
 .figure {
   font-size: 28px;
   font-weight: 500;
+}
+.figures.three {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+.figures.three .figure {
+  font-size: 22px;
+}
+.purchase .section-title i {
+  margin-right: 4px;
+  color: var(--ct-accent-text);
+}
+.purchase-form {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+.purchase-line {
+  margin-top: 8px;
+  font-size: 13px;
+}
+.purchase-line.under {
+  color: var(--ct-accent-text);
+}
+.purchase .hint {
+  margin-top: 4px;
 }
 .figure-sub {
   font-size: 12.5px;

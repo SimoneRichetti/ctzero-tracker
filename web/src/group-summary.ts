@@ -23,6 +23,7 @@ export function filterByGroup<T extends { groupId: number | null }>(cards: T[], 
 }
 
 export interface GroupSummary {
+  /** Cards still tracked: bought ones only count in `bought` and `savedCents`. */
   count: number;
   below: number;
   /** No offers or last update failed. */
@@ -31,11 +32,28 @@ export interface GroupSummary {
   totalThresholdCents: number;
   /** Cards not counted in `totalPriceCents`. */
   missingPrice: number;
+  bought: number;
+  /** Saved on the bought cards against their start price (unknown savings count as 0). */
+  savedCents: number;
 }
 
 export function summarize(cards: PricedItem[]): GroupSummary {
-  const s: GroupSummary = { count: 0, below: 0, problems: 0, totalPriceCents: 0, totalThresholdCents: 0, missingPrice: 0 };
+  const s: GroupSummary = {
+    count: 0,
+    below: 0,
+    problems: 0,
+    totalPriceCents: 0,
+    totalThresholdCents: 0,
+    missingPrice: 0,
+    bought: 0,
+    savedCents: 0,
+  };
   for (const c of cards) {
+    if (c.purchase) {
+      s.bought++;
+      s.savedCents += c.purchase.savedCents ?? 0;
+      continue;
+    }
     const status = cardStatus(c);
     s.count++;
     if (status === 'below') s.below++;

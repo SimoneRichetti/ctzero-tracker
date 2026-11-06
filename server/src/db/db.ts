@@ -107,6 +107,24 @@ export const MIGRATIONS: string[] = [
   ALTER TABLE tracked_cards DROP COLUMN foil;
   ALTER TABLE tracked_cards RENAME COLUMN foil_filter TO foil;
   `,
+  `
+  ALTER TABLE tracked_cards ADD COLUMN start_price_cents INTEGER;
+  ALTER TABLE tracked_cards ADD COLUMN start_price_at TEXT;
+  UPDATE tracked_cards SET (start_price_cents, start_price_at) = (
+    SELECT s.price_cents, s.synced_at FROM price_snapshots s
+    WHERE s.tracked_card_id = tracked_cards.id AND s.price_cents IS NOT NULL
+    ORDER BY s.id LIMIT 1
+  );
+  CREATE TABLE card_purchases (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    tracked_card_id INTEGER UNIQUE REFERENCES tracked_cards(id) ON DELETE SET NULL,
+    name TEXT NOT NULL,
+    image_url TEXT,
+    start_price_cents INTEGER,
+    price_paid_cents INTEGER NOT NULL,
+    purchased_at TEXT NOT NULL
+  );
+  `,
 ];
 
 export function openDb(path: string): Db {
