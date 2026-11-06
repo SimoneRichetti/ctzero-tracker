@@ -71,7 +71,9 @@ export class SyncService {
     const cardIds = listCards(db)
       .filter((c) => c.purchase === null)
       .map((c) => c.id);
-    const sealedIds = listSealed(db).map((s) => s.id);
+    const sealedIds = listSealed(db)
+      .filter((s) => s.purchase === null)
+      .map((s) => s.id);
     const run = startRun(db, trigger, cardIds.length + sealedIds.length, this.now());
     this.active = this.execute(run.id, cardIds, sealedIds).finally(() => {
       this.active = null;
@@ -121,7 +123,7 @@ export class SyncService {
 
       for (const id of sealedIds) {
         const item = getSealed(db, id);
-        if (item) {
+        if (item && !item.purchase) {
           const fatal = await this.runItem(
             'sealed',
             item.name,
@@ -227,7 +229,8 @@ export class SyncService {
     const { next, event } = evaluate(item, result, furtherDropPercent);
     const applied = transaction(db, () => {
       // Same guard as cards: stale results are neither written nor notified.
-      if (!isUnchanged(getSealed(db, item.id), item)) return false;
+      const latest = getSealed(db, item.id);
+      if (!isUnchanged(latest, item) || latest?.purchase) return false;
       insertSealedSnapshot(db, { sealedId: item.id, configVersion: item.configVersion, syncedAt: iso, priceCents });
       updateSealed(
         db,

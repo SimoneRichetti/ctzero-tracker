@@ -2,6 +2,7 @@ import {
   thresholdPresets,
   type PreviewResult,
   type PriceHistoryDto,
+  type PurchaseInput,
   type SealedInput,
   type SealedPreview,
   type SealedUpdate,
@@ -22,7 +23,8 @@ import {
   listSealedSnapshots,
   updateSealed,
 } from '../db/sealed-repo';
-import { NotFoundError, errorMessage } from '../errors';
+import { deletePurchaseOf, upsertPurchase } from '../db/purchases-repo';
+import { NotFoundError, ValidationError, errorMessage } from '../errors';
 import { priceSealed } from '../pricing/sealed-pricer';
 import { computeTrend, trendSince } from '../pricing/trend';
 
@@ -121,6 +123,27 @@ export class SealedService {
 
   delete(id: number): void {
     if (!deleteSealed(this.deps.db, id)) throw new NotFoundError('Sealed product not found');
+  }
+
+  /** Marks the product as bought: it stops being updated and the saving counts towards the total. */
+  purchase(id: number, input: PurchaseInput): TrackedSealed {
+    const { db } = this.deps;
+    return transaction(db, () => {
+      const item = getSealed(db, id);
+      if (!item) throw new NotFoundError('Sealed product not found');
+      upsertPurchase(db, 'sealed', item, input.pricePaidCents, this.now());
+      return getSealed(db, id)!;
+    });
+  }
+
+  /** Undoes a purchase: the product is tracked again from the next update. */
+  unpurchase(id: number): TrackedSealed {
+    const { db } = this.deps;
+    return transaction(db, () => {
+      if (!getSealed(db, id)) throw new NotFoundError('Sealed product not found');
+      if (!deletePurchaseOf(db, 'sealed', id)) throw new ValidationError('Product is not marked as bought');
+      return getSealed(db, id)!;
+    });
   }
 
   /**

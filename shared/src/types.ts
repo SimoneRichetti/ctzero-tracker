@@ -46,25 +46,28 @@ export interface TrackedCard {
   startPriceCents: number | null;
   startPriceAt: string | null;
   /** Set once the card is marked as bought: it is no longer updated nor alerted. */
-  purchase: CardPurchase | null;
+  purchase: Purchase | null;
   createdAt: string;
   updatedAt: string;
 }
 
-export interface CardPurchase {
+export type ItemKind = 'card' | 'sealed';
+
+export interface Purchase {
   pricePaidCents: number;
-  /** Start price of the card when it was bought; null if it had never been priced. */
+  /** Start price of the item when it was bought; null if it had never been priced. */
   startPriceCents: number | null;
   /** startPriceCents − pricePaidCents (negative = paid more); null if the start price is unknown. */
   savedCents: number | null;
   purchasedAt: string;
 }
 
-/** A purchase as stored for the savings total: it survives the card being removed. */
-export interface PurchaseRecord extends CardPurchase {
+/** A purchase as stored for the savings total: it survives the item being removed. */
+export interface PurchaseRecord extends Purchase {
   id: number;
-  /** null = the card is no longer tracked. */
-  cardId: number | null;
+  kind: ItemKind;
+  /** Id of the tracked card or sealed product; null = no longer tracked. */
+  itemId: number | null;
   name: string;
   imageUrl: string | null;
 }
@@ -167,6 +170,11 @@ export interface TrackedSealed {
   lastError: string | null;
   alertState: AlertState | null;
   lastNotifiedPriceCents: number | null;
+  /** First price ever recorded for the product (null = never priced yet). */
+  startPriceCents: number | null;
+  startPriceAt: string | null;
+  /** Set once the product is marked as bought: it is no longer updated nor alerted. */
+  purchase: Purchase | null;
   createdAt: string;
   updatedAt: string;
 }

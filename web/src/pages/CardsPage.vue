@@ -1,11 +1,11 @@
 <script setup lang="ts">
-import { formatEuro, type BulkResult, type PurchasesDto, type TrackedCard, type TrackedCardRow } from '@ctzero/shared';
+import { formatEuro, type BulkResult, type TrackedCard, type TrackedCardRow, type TrackedSealed } from '@ctzero/shared';
 import Button from 'primevue/button';
 import InputText from 'primevue/inputtext';
 import Menu from 'primevue/menu';
 import { useConfirm } from 'primevue/useconfirm';
 import { useToast } from 'primevue/usetoast';
-import { computed, nextTick, onMounted, ref, watch } from 'vue';
+import { computed, nextTick, ref, watch } from 'vue';
 import { useRouter } from 'vue-router';
 import { api } from '../api';
 import { BulkStoppedError, bulkCards } from '../bulk-cards';
@@ -17,7 +17,7 @@ import BulkThresholdDialog from '../components/BulkThresholdDialog.vue';
 import CardDialog from '../components/CardDialog.vue';
 import ItemDrawer from '../components/ItemDrawer.vue';
 import TrackedList from '../components/TrackedList.vue';
-import { filterByGroup, parseGroupFilter } from '../group-summary';
+import { filterByGroup, parseGroupFilter, purchaseTotals } from '../group-summary';
 import { useOpenItem } from '../open-item';
 
 /** 'all', 'none' (ungrouped) or a group id from `/groups/:id`. */
@@ -26,7 +26,7 @@ const props = defineProps<{ scope: string }>();
 const toast = useToast();
 const confirm = useConfirm();
 const router = useRouter();
-const { cards, groups, groupNames, loading, loaded, reloadCardsAndGroups, reloadGroups } = useCatalog();
+const { cards, groups, groupNames, purchases, loading, loaded, reloadCardsAndGroups, reloadGroups, reloadPurchases } = useCatalog();
 
 const groupFilter = computed(() =>
   parseGroupFilter(
@@ -72,7 +72,7 @@ function onDeleted(card: TrackedCardRow) {
   void reloadCardsAndGroups();
 }
 
-function onPurchased(card: TrackedCard, bought: boolean) {
+function onPurchased(card: TrackedCard | TrackedSealed, bought: boolean) {
   const saved = card.purchase?.savedCents;
   toast.add({
     severity: 'success',
@@ -81,26 +81,12 @@ function onPurchased(card: TrackedCard, bought: boolean) {
     life: 4000,
   });
   void reloadCardsAndGroups();
-  void loadPurchases();
+  void reloadPurchases();
 }
 
-// ---------- savings ----------
-// The total also counts cards bought and then removed, which are no longer in the list.
-const purchases = ref<PurchasesDto | null>(null);
-
-async function loadPurchases() {
-  try {
-    purchases.value = await api.get<PurchasesDto>('/api/purchases');
-  } catch (e) {
-    toast.add({ severity: 'error', summary: 'Savings not loaded', detail: (e as Error).message, life: 5000 });
-  }
-}
-onMounted(loadPurchases);
-
+// The "All cards" total also counts cards bought and then removed, which are no longer in the list.
 const savings = computed(() =>
-  groupFilter.value === 'all' && purchases.value
-    ? { savedCents: purchases.value.totalSavedCents, count: purchases.value.items.length }
-    : undefined,
+  groupFilter.value === 'all' && purchases.value ? purchaseTotals(purchases.value.items, 'card') : undefined,
 );
 
 // ---------- add ----------

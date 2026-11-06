@@ -9,11 +9,11 @@ import type {
 } from '@ctzero/shared';
 import { NotFoundError } from '../errors';
 import { transaction, type Db } from './db';
-import { toPurchase } from './purchases-repo';
+import { PURCHASE_COLUMNS, purchaseJoin, purchaseOf, type PurchaseColumns } from './purchases-repo';
 
 type SqlValue = string | number | null;
 
-interface CardRecord {
+interface CardRecord extends PurchaseColumns {
   id: number;
   name: string;
   scryfall_oracle_id: string;
@@ -35,10 +35,6 @@ interface CardRecord {
   blueprints_resolved_at: string | null;
   start_price_cents: number | null;
   start_price_at: string | null;
-  /** From the LEFT JOIN with card_purchases (null = not bought). */
-  p_paid: number | null;
-  p_start: number | null;
-  p_at: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -81,9 +77,7 @@ const COLUMNS: Record<keyof CardPatch, string> = {
 };
 
 /** Cards with their purchase, if any. */
-const SELECT_CARDS = `
-  SELECT c.*, p.price_paid_cents AS p_paid, p.start_price_cents AS p_start, p.purchased_at AS p_at
-  FROM tracked_cards c LEFT JOIN card_purchases p ON p.tracked_card_id = c.id`;
+const SELECT_CARDS = `SELECT t.*, ${PURCHASE_COLUMNS} FROM tracked_cards t ${purchaseJoin('card')}`;
 
 function encode(key: keyof CardPatch, value: unknown): SqlValue {
   if (value === null || value === undefined) return null;
@@ -124,22 +118,19 @@ function toCard(db: Db, r: CardRecord): TrackedCard {
     blueprintsResolvedAt: r.blueprints_resolved_at,
     startPriceCents: r.start_price_cents,
     startPriceAt: r.start_price_at,
-    purchase:
-      r.p_paid === null || r.p_at === null
-        ? null
-        : toPurchase({ start_price_cents: r.p_start, price_paid_cents: r.p_paid, purchased_at: r.p_at }),
+    purchase: purchaseOf(r),
     createdAt: r.created_at,
     updatedAt: r.updated_at,
   };
 }
 
 export function listCards(db: Db): TrackedCard[] {
-  const rows = db.prepare(`${SELECT_CARDS} ORDER BY c.name COLLATE NOCASE, c.id`).all() as unknown as CardRecord[];
+  const rows = db.prepare(`${SELECT_CARDS} ORDER BY t.name COLLATE NOCASE, t.id`).all() as unknown as CardRecord[];
   return rows.map((r) => toCard(db, r));
 }
 
 export function getCard(db: Db, id: number): TrackedCard | null {
-  const row = db.prepare(`${SELECT_CARDS} WHERE c.id = ?`).get(id) as unknown as CardRecord | undefined;
+  const row = db.prepare(`${SELECT_CARDS} WHERE t.id = ?`).get(id) as unknown as CardRecord | undefined;
   return row ? toCard(db, row) : null;
 }
 

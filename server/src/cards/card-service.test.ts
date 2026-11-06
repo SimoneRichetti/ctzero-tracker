@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi, type Mock } from 'vitest';
 import type { CardLookup } from '../catalog/catalog';
 import { getBlueprints, getCard, insertCard, insertSnapshot, listCards, listSnapshots, updateCard } from '../db/cards-repo';
 import { deleteGroup, insertGroup } from '../db/groups-repo';
+import { purchasesSummary } from '../db/purchases-repo';
 import { openDb, type Db } from '../db/db';
 import { NotFoundError, ValidationError } from '../errors';
 import { makeProduct } from '../test-utils';
@@ -382,10 +383,10 @@ describe('purchases', () => {
     const c = insertCard(db, { ...lookup, scryfallOracleId: 'o2', expansionIds: [], languages: [], minCondition: 'Near Mint', foil: null, thresholdCents: 100 }, t0);
     service.purchase(c.id, { pricePaidCents: 500 }); // never priced: unknown
     service.delete(a.id);
-    const result = service.purchases();
+    const result = purchasesSummary(db);
     expect(result.totalSavedCents).toBe(600);
     expect(result.totalPaidCents).toBe(4700);
     expect(result.items).toHaveLength(3);
-    expect(result.items.find((p) => p.savedCents === 800)?.cardId).toBeNull();
+    expect(result.items.find((p) => p.savedCents === 800)?.itemId).toBeNull();
   });
 });

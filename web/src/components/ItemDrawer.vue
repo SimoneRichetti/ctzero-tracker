@@ -43,7 +43,7 @@ const emit = defineEmits<{
   saved: [item: TrackedCard | TrackedSealed];
   deleted: [item: Row];
   /** `bought` false = the purchase was undone. */
-  purchased: [card: TrackedCard, bought: boolean];
+  purchased: [item: TrackedCard | TrackedSealed, bought: boolean];
 }>();
 const confirm = useConfirm();
 
@@ -234,49 +234,51 @@ async function save() {
   }
 }
 
-// ---------- start price and purchase (cards only) ----------
+// ---------- start price and purchase ----------
 const paidEuro = ref<number | null>(null);
 const purchasing = ref(false);
 
 /** The price paid defaults to the current price, which is what the user most likely paid. */
-function resetPaid(item: Row | TrackedCard) {
-  const c = props.kind === 'card' ? (item as TrackedCard) : null;
-  const cents = c ? (c.lastPriceCents ?? c.startPriceCents) : null;
+function resetPaid(item: Row | TrackedCard | TrackedSealed) {
+  const cents = item.lastPriceCents ?? item.startPriceCents;
   paidEuro.value = cents === null ? null : cents / 100;
 }
 
+const noun = computed(() => (props.kind === 'card' ? 'card' : 'product'));
+
 const start = computed(() => {
-  const c = card.value;
+  const c = props.item;
   if (!c || c.startPriceCents === null) return null;
   const since = c.startPriceAt ? dayLabel(c.startPriceAt, new Date()) : null;
   const sinceText = since ? `since ${since === 'Today' || since === 'Yesterday' ? since.toLowerCase() : since}` : null;
   return { cents: c.startPriceCents, sub: [sinceText, sinceStart(c)].filter(Boolean).join(' · ') };
 });
 
-/** What marking the card as bought at `paidEuro` would save. */
+/** What marking the item as bought at `paidEuro` would save. */
 const savingPreview = computed(() => {
-  const c = card.value;
+  const c = props.item;
   if (!c || paidEuro.value === null || c.startPriceCents === null) return null;
   return savingText(c.startPriceCents - euroToCents(paidEuro.value));
 });
 
 const purchaseDay = computed(() => {
-  const p = card.value?.purchase;
+  const p = props.item?.purchase;
   if (!p) return '';
   const day = dayLabel(p.purchasedAt, new Date());
   return day === 'Today' || day === 'Yesterday' ? day.toLowerCase() : `on ${day}`;
 });
 
 async function setPurchase(bought: boolean) {
-  const c = card.value;
+  const c = props.item;
   if (!c || purchasing.value) return;
   if (bought && (paidEuro.value === null || euroToCents(paidEuro.value) < 1)) return;
   purchasing.value = true;
   error.value = null;
   try {
+    const path = `/api/${props.kind === 'card' ? 'cards' : 'sealed'}/${c.id}/purchase`;
     const updated = bought
-      ? await api.put<TrackedCard>(`/api/cards/${c.id}/purchase`, { pricePaidCents: euroToCents(paidEuro.value!) })
-      : await api.del<TrackedCard>(`/api/cards/${c.id}/purchase`);
+      ? await api.put<TrackedCard | TrackedSealed>(path, { pricePaidCents: euroToCents(paidEuro.value!) })
+      : await api.del<TrackedCard | TrackedSealed>(path);
     if (!bought) resetPaid(updated);
     emit('purchased', updated, bought);
   } catch (e) {
@@ -334,8 +336,8 @@ function remove() {
           </div>
         </header>
 
-        <div class="figures" :class="{ three: kind === 'card' }">
-          <div v-if="kind === 'card'">
+        <div class="figures three">
+          <div>
             <div class="figure-label">Start price</div>
             <div class="figure mono">{{ start ? formatEuro(start.cents) : '—' }}</div>
             <div class="figure-sub">{{ start ? start.sub : 'set by the first price found' }}</div>
@@ -356,23 +358,23 @@ function remove() {
           <PriceHistoryChart :kind="kind" :id="item.id" :refresh-key="refreshKey" />
         </div>
 
-        <div v-if="card" class="section purchase">
-          <template v-if="card.purchase">
+        <div class="section purchase">
+          <template v-if="item.purchase">
             <div class="section-head">
               <div class="section-title">
                 <i class="pi pi-check-circle" aria-hidden="true"></i>
-                Bought {{ purchaseDay }} for <span class="mono">{{ formatEuro(card.purchase.pricePaidCents) }}</span>
+                Bought {{ purchaseDay }} for <span class="mono">{{ formatEuro(item.purchase.pricePaidCents) }}</span>
               </div>
               <Button label="Undo" size="small" text severity="secondary" :loading="purchasing" @click="setPurchase(false)" />
             </div>
-            <div class="purchase-line" :class="{ under: (card.purchase.savedCents ?? 0) > 0 }">
-              <template v-if="card.purchase.savedCents !== null">
-                {{ savingText(card.purchase.savedCents) }} on the start price of
-                <span class="mono">{{ formatEuro(card.purchase.startPriceCents!) }}</span>
+            <div class="purchase-line" :class="{ under: (item.purchase.savedCents ?? 0) > 0 }">
+              <template v-if="item.purchase.savedCents !== null">
+                {{ savingText(item.purchase.savedCents) }} on the start price of
+                <span class="mono">{{ formatEuro(item.purchase.startPriceCents!) }}</span>
               </template>
               <template v-else>No start price was recorded, so this purchase adds nothing to the savings.</template>
             </div>
-            <div class="hint">Updates and alerts are paused for this card.</div>
+            <div class="hint">Updates and alerts are paused for this {{ noun }}.</div>
           </template>
           <template v-else>
             <div class="section-head">

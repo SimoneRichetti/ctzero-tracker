@@ -2,6 +2,7 @@ import type { SealedInput, SealedProduct } from '@ctzero/shared';
 import { beforeEach, describe, expect, it, vi, type Mock } from 'vitest';
 import { HttpError } from '../clients/http';
 import { openDb, type Db } from '../db/db';
+import { listPurchases } from '../db/purchases-repo';
 import { getSealed, insertSealed, insertSealedSnapshot, listSealedSnapshots, updateSealed } from '../db/sealed-repo';
 import { NotFoundError, ValidationError } from '../errors';
 import { makeProduct } from '../test-utils';
@@ -215,5 +216,29 @@ describe('list and history', () => {
 
   it('history of a missing product → NotFoundError', () => {
     expect(() => service.history(999)).toThrow(NotFoundError);
+  });
+});
+
+describe('purchases', () => {
+  it('records the start price, marks the product as bought and undoes it', async () => {
+    const s = await service.create(input);
+    expect(s).toMatchObject({ startPriceCents: 19000, startPriceAt: t0.toISOString() });
+    price = 17000;
+    await service.update(s.id, { ...input, languages: ['it'] }); // re-priced: the start price stays
+    const bought = service.purchase(s.id, { pricePaidCents: 16500 });
+    expect(bought.startPriceCents).toBe(19000);
+    expect(bought.purchase).toEqual({ pricePaidCents: 16500, startPriceCents: 19000, savedCents: 2500, purchasedAt: t0.toISOString() });
+    expect(listPurchases(db)[0]).toMatchObject({ kind: 'sealed', itemId: s.id, savedCents: 2500 });
+    expect(service.unpurchase(s.id).purchase).toBeNull();
+    expect(() => service.unpurchase(s.id)).toThrow(ValidationError);
+  });
+
+  it('missing product → NotFoundError; the purchase outlives the product', async () => {
+    expect(() => service.purchase(999, { pricePaidCents: 100 })).toThrow(NotFoundError);
+    expect(() => service.unpurchase(999)).toThrow(NotFoundError);
+    const s = await service.create(input);
+    service.purchase(s.id, { pricePaidCents: 18000 });
+    service.delete(s.id);
+    expect(listPurchases(db)).toMatchObject([{ kind: 'sealed', itemId: null, savedCents: 1000 }]);
   });
 });

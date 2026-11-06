@@ -1,8 +1,8 @@
-import type { CardPurchase, TrackedCard } from '@ctzero/shared';
+import type { Purchase, TrackedCard } from '@ctzero/shared';
 
-/** Fields shared by tracked cards and tracked sealed products; only cards can be bought. */
+/** Fields shared by tracked cards and tracked sealed products. */
 export type PricedItem = Pick<TrackedCard, 'name' | 'thresholdCents' | 'lastPriceCents' | 'lastSyncStatus' | 'alertState'> & {
-  purchase?: CardPurchase | null;
+  purchase?: Purchase | null;
 };
 
 export type CardStatus = 'below' | 'above' | 'no_offers' | 'error' | 'pending' | 'bought';

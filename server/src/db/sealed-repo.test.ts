@@ -77,6 +77,9 @@ describe('sealed-repo', () => {
       lastError: null,
       alertState: null,
       lastNotifiedPriceCents: null,
+      startPriceCents: null,
+      startPriceAt: null,
+      purchase: null,
       createdAt: t0.toISOString(),
       updatedAt: t0.toISOString(),
     });

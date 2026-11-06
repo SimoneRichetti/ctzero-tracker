@@ -1,3 +1,4 @@
+import type { ItemKind, PurchaseRecord } from '@ctzero/shared';
 import { cardStatus, type PricedItem } from './card-status';
 
 /** Group shown in the cards page: every card, cards without a group, or one group. */
@@ -35,6 +36,12 @@ export interface GroupSummary {
   bought: number;
   /** Saved on the bought cards against their start price (unknown savings count as 0). */
   savedCents: number;
+}
+
+/** Savings of the purchases of one kind, including items no longer tracked. */
+export function purchaseTotals(items: PurchaseRecord[], kind: ItemKind): { savedCents: number; count: number } {
+  const ofKind = items.filter((p) => p.kind === kind);
+  return { savedCents: ofKind.reduce((sum, p) => sum + (p.savedCents ?? 0), 0), count: ofKind.length };
 }
 
 export function summarize(cards: PricedItem[]): GroupSummary {

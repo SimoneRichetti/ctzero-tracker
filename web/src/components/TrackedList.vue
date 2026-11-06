@@ -29,7 +29,7 @@ const props = defineProps<{
   groupNames?: Map<number, string>;
   openId: number | null;
   emptyText: string;
-  /** Savings to show instead of those of `items` (the "All cards" view also counts cards no longer tracked). */
+  /** Savings to show instead of those of `items` (e.g. to also count items no longer tracked). */
   savings?: { savedCents: number; count: number };
 }>();
 const selection = defineModel<R[]>('selection', { required: true });
@@ -69,10 +69,7 @@ watch([tab, () => route.query.q], () => (selection.value = []));
 const summary = computed(() => summarize(props.items));
 const searched = computed(() => props.items.filter((i) => matchesSearch(i.name, search.value)));
 const counts = computed(() => tabCounts(searched.value));
-// Only cards can be bought.
-const tabOptions = computed(() =>
-  STATUS_TABS.filter((t) => props.kind === 'card' || t.value !== 'bought').map((t) => ({ ...t, count: counts.value[t.value] })),
-);
+const tabOptions = computed(() => STATUS_TABS.map((t) => ({ ...t, count: counts.value[t.value] })));
 const saved = computed(() => props.savings ?? { savedCents: summary.value.savedCents, count: summary.value.bought });
 const rows = computed(() => sortItems(filterByTab(searched.value, tab.value), sort.value));
 
@@ -140,10 +137,10 @@ function showPreview(event: MouseEvent, row: Row) {
       <div class="kpi-value mono" :class="{ warn: summary.problems > 0 }">{{ summary.problems }}</div>
       <div class="kpi-sub">no offers or failed update</div>
     </div>
-    <div v-if="kind === 'card'" class="kpi">
+    <div class="kpi">
       <div class="kpi-label">Total saved</div>
       <div class="kpi-value mono" :class="{ accent: saved.savedCents > 0 }">{{ formatEuro(saved.savedCents) }}</div>
-      <div class="kpi-sub">{{ saved.count === 1 ? 'on 1 card bought' : `on ${saved.count} cards bought` }}</div>
+      <div class="kpi-sub">on {{ saved.count }} {{ kind === 'card' ? 'card' : 'product' }}{{ saved.count === 1 ? '' : 's' }} bought</div>
     </div>
   </div>
 
