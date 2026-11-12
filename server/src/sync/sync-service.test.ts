@@ -221,9 +221,27 @@ describe('SyncService', () => {
     prices.set(300, 3000);
     await run();
     expect(catalog.lookup).toHaveBeenCalledWith('Bolt');
-    expect(catalog.resolveBlueprints).toHaveBeenCalledWith(lookup, []);
+    expect(catalog.resolveBlueprints).toHaveBeenCalledWith(lookup, [], []);
     expect(getBlueprints(db, card.id)).toEqual(fresh);
     expect(getCard(db, card.id)).toMatchObject({ blueprintsResolvedAt: t0.toISOString(), lastPriceCents: 3000 });
+  });
+
+  it('the periodic re-resolution keeps the excluded expansions out', async () => {
+    const card = addCard('Bolt', 100, 4000, { expansionIds: [] });
+    updateCard(
+      db,
+      card.id,
+      {
+        blueprintsResolvedAt: new Date(t0.getTime() - 8 * DAY).toISOString(),
+        excludedExpansions: [{ expansionId: 7, expansionName: 'Secret Lair' }],
+      },
+      t0,
+    );
+    const lookup = { name: 'Bolt' } as CardLookup;
+    catalog.lookup.mockResolvedValueOnce(lookup);
+    catalog.resolveBlueprints.mockResolvedValueOnce([{ blueprintId: 100, expansionId: 1, expansionName: 'M10' }]);
+    await run();
+    expect(catalog.resolveBlueprints).toHaveBeenCalledWith(lookup, [], [7]);
   });
 
   it('if re-resolution fails, uses the existing blueprints', async () => {

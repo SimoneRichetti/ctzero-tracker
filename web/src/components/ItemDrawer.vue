@@ -26,12 +26,14 @@ import { useConfirm } from 'primevue/useconfirm';
 import { computed, ref, watch } from 'vue';
 import { onBeforeRouteLeave, onBeforeRouteUpdate } from 'vue-router';
 import { api } from '../api';
+import { useAdditiveSelectAll } from '../additive-select-all';
 import { FINISH_OPTIONS, fromFinish, toFinish } from '../finish-choice';
 import { cardStatus } from '../card-status';
 import { latestRequest } from '../latest-request';
 import { cardTraderUrl as cardTraderLink, gapSentence, largeImageUrl, listingLine, savingText, sinceStart, targetGap } from '../row-format';
 import { dayLabel, formatWhen } from '../time-format';
 import PriceHistoryChart from './PriceHistoryChart.vue';
+import SelectedExpansions from './SelectedExpansions.vue';
 import StatusPill from './StatusPill.vue';
 
 type Row = TrackedCardRow | TrackedSealedRow;
@@ -54,6 +56,7 @@ interface Form {
   targetEuro: number | null;
   languages: Language[];
   expansionIds: number[];
+  excludedExpansionIds: number[];
   minCondition: Condition;
   foil: boolean | null;
   groupId: number | null;
@@ -70,7 +73,7 @@ const card = computed(() => (props.kind === 'card' && props.item ? (props.item a
 const sealed = computed(() => (props.kind === 'sealed' && props.item ? (props.item as TrackedSealedRow) : null));
 
 function emptyForm(): Form {
-  return { targetEuro: null, languages: [], expansionIds: [], minCondition: 'Near Mint', foil: null, groupId: null };
+  return { targetEuro: null, languages: [], expansionIds: [], excludedExpansionIds: [], minCondition: 'Near Mint', foil: null, groupId: null };
 }
 
 function formOf(item: Row): Form {
@@ -79,6 +82,7 @@ function formOf(item: Row): Form {
     targetEuro: item.thresholdCents / 100,
     languages: [...item.languages],
     expansionIds: c ? [...c.expansionIds] : [],
+    excludedExpansionIds: c ? c.excludedExpansions.map((e) => e.expansionId) : [],
     minCondition: c?.minCondition ?? 'Near Mint',
     foil: c ? c.foil : null,
     groupId: c?.groupId ?? null,
@@ -133,6 +137,24 @@ const expansionOptions = computed(() => {
   const c = card.value;
   return c ? c.expansionIds.map((id, i) => ({ expansionId: id, expansionName: c.expansionNames[i] ?? `#${id}` })) : [];
 });
+const excludedOptions = computed(() => lookup.value?.printings ?? card.value?.excludedExpansions ?? []);
+const formIds = (key: 'expansionIds' | 'excludedExpansionIds') =>
+  computed({ get: () => form.value[key], set: (v: number[]) => (form.value[key] = v) });
+const printingLabel = (p: { expansionName: string }) => p.expansionName;
+const printingId = (p: { expansionId: number }) => p.expansionId;
+const named = (list: { expansionId: number; expansionName: string }[]) => list.map((p) => ({ id: p.expansionId, name: p.expansionName }));
+const namedExpansions = computed(() => named(expansionOptions.value));
+const namedExcluded = computed(() => named(excludedOptions.value));
+const expansionSelect = useAdditiveSelectAll(formIds('expansionIds'), expansionOptions, printingLabel, printingId);
+const excludedSelect = useAdditiveSelectAll(formIds('excludedExpansionIds'), excludedOptions, printingLabel, printingId);
+
+// Exclusions only make sense with "any expansion": picking expansions drops them.
+watch(
+  () => form.value.expansionIds.length,
+  (n) => {
+    if (n > 0 && form.value.excludedExpansionIds.length > 0) form.value.excludedExpansionIds = [];
+  },
+);
 
 const visible = computed({
   get: () => props.item !== null,
@@ -217,6 +239,7 @@ async function save() {
       props.kind === 'card'
         ? await api.put<TrackedCard>(`/api/cards/${item.id}`, {
             expansionIds: f.expansionIds,
+            excludedExpansionIds: f.excludedExpansionIds,
             languages: f.languages,
             minCondition: f.minCondition,
             foil: f.foil,
@@ -445,17 +468,46 @@ function remove() {
               <MultiSelect
                 v-model="form.expansionIds"
                 input-id="drawer-expansions"
+                :select-all="expansionSelect.selectAll"
+                @filter="expansionSelect.onFilter"
+                @selectall-change="expansionSelect.onSelectAllChange"
                 :options="expansionOptions"
                 option-label="expansionName"
                 option-value="expansionId"
                 placeholder="Any expansion"
-                :max-selected-labels="2"
-                selected-items-label="{0} expansions"
+                :max-selected-labels="0"
+                selected-items-label="{0} selected"
                 filter
                 :loading="!lookup && !error"
                 class="rule-control"
               />
             </div>
+            <SelectedExpansions v-model="form.expansionIds" :options="namedExpansions" class="rule-selection" />
+            <div v-if="form.expansionIds.length === 0" class="rule">
+              <label for="drawer-excluded">Except</label>
+              <MultiSelect
+                v-model="form.excludedExpansionIds"
+                input-id="drawer-excluded"
+                :select-all="excludedSelect.selectAll"
+                @filter="excludedSelect.onFilter"
+                @selectall-change="excludedSelect.onSelectAllChange"
+                :options="excludedOptions"
+                option-label="expansionName"
+                option-value="expansionId"
+                placeholder="No exclusions"
+                :max-selected-labels="0"
+                selected-items-label="{0} selected"
+                filter
+                :loading="!lookup && !error"
+                class="rule-control"
+              />
+            </div>
+            <SelectedExpansions
+              v-if="form.expansionIds.length === 0"
+              v-model="form.excludedExpansionIds"
+              :options="namedExcluded"
+              class="rule-selection"
+            />
             <div class="rule">
               <label for="drawer-languages">Languages</label>
               <MultiSelect
@@ -689,6 +741,9 @@ function remove() {
   gap: 12px;
   min-height: 48px;
   border-top: 1px solid var(--ct-line);
+}
+.rule-selection {
+  margin: 0 0 0.75rem;
 }
 .rule:first-of-type {
   border-top: 0;

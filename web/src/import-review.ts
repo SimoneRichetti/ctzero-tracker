@@ -91,6 +91,7 @@ export function createPayload(
   return {
     name: row.result!.name,
     expansionIds: row.result!.expansionIds,
+    excludedExpansionIds: [],
     languages: opts.languages,
     minCondition: opts.minCondition,
     foil: row.foil,

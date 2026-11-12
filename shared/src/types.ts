@@ -27,6 +27,8 @@ export interface TrackedCard {
   expansionIds: number[];
   /** Names of the selected expansions (empty if "any"). */
   expansionNames: string[];
+  /** Expansions whose printings are ignored; only used when `expansionIds` is [] (any). */
+  excludedExpansions: ExpansionRef[];
   /** [] = any language. */
   languages: Language[];
   minCondition: Condition;
@@ -78,6 +80,11 @@ export interface PurchasesDto {
   totalPaidCents: number;
   /** Newest first. */
   items: PurchaseRecord[];
+}
+
+export interface ExpansionRef {
+  expansionId: number;
+  expansionName: string;
 }
 
 export interface CardBlueprint {

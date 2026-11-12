@@ -8,6 +8,8 @@ const languagesSchema = uniqueArray(z.enum(LANGUAGES));
 export const cardFiltersSchema = z.object({
   name: z.string().trim().min(1),
   expansionIds: uniqueArray(z.number().int().positive()),
+  /** Ignored when `expansionIds` is not empty. */
+  excludedExpansionIds: uniqueArray(z.number().int().positive()).default([]),
   languages: languagesSchema,
   minCondition: z.enum(CONDITIONS),
   /** null = foil or non-foil. */
@@ -53,7 +55,7 @@ export const bulkCardsSchema = z.object({
 });
 export type BulkCards = z.infer<typeof bulkCardsSchema>;
 
-export const importResolveSchema = cardFiltersSchema.omit({ expansionIds: true }).extend({
+export const importResolveSchema = cardFiltersSchema.omit({ expansionIds: true, excludedExpansionIds: true }).extend({
   setCode: z.string().trim().min(1).nullable(),
   /** See DecklistLine.setGuessed: an unknown set falls back to any set instead of failing. */
   setGuessed: z.boolean().default(false),

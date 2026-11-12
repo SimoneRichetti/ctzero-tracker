@@ -26,6 +26,12 @@ describe('cardInputSchema', () => {
     expect(cardInputSchema.safeParse(valid).success).toBe(true);
   });
 
+  it('excluded expansions are optional (default none) and deduplicated', () => {
+    expect(cardInputSchema.parse(valid).excludedExpansionIds).toEqual([]);
+    expect(cardInputSchema.parse({ ...valid, excludedExpansionIds: [3, 3] }).excludedExpansionIds).toEqual([3]);
+    expect(cardInputSchema.safeParse({ ...valid, excludedExpansionIds: [0] }).success).toBe(false);
+  });
+
   it('accepts foil = null (any finish) but requires the field', () => {
     expect(cardInputSchema.parse({ ...valid, foil: null }).foil).toBeNull();
     const { foil: _, ...noFoil } = valid;
