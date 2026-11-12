@@ -104,4 +104,42 @@ describe('Scheduler', () => {
     s.start();
     expect(s.getNextRunAt()).toEqual(new Date(Date.now() + 6 * HOUR));
   });
+
+  it('a run missed while the machine slept starts within a minute of resume', () => {
+    finishedRunAt(new Date(Date.now() - HOUR));
+    const s = make();
+    s.start();
+    const due = new Date(Date.now() + 5 * HOUR);
+    vi.advanceTimersByTime(HOUR);
+    // Sleep: the wall clock moves on, timers (monotonic clock) do not.
+    vi.setSystemTime(new Date(Date.now() + 10 * HOUR));
+    expect(sync.start).not.toHaveBeenCalled();
+    expect(s.getNextRunAt()).toEqual(due);
+    vi.advanceTimersByTime(60_000);
+    expect(sync.start).toHaveBeenCalledWith('scheduled');
+  });
+
+  it('waiting in short steps does not fire early', () => {
+    finishedRunAt(new Date(Date.now() - HOUR));
+    const s = make();
+    s.start();
+    vi.advanceTimersByTime(5 * HOUR - 1);
+    expect(sync.start).not.toHaveBeenCalled();
+    vi.advanceTimersByTime(1);
+    expect(sync.start).toHaveBeenCalledTimes(1);
+  });
+
+  it('a run due right after a finished run still starts asynchronously', () => {
+    finishedRunAt(new Date(Date.now() - 7 * HOUR));
+    const s = make();
+    s.start();
+    vi.advanceTimersByTime(30_000);
+    expect(sync.start).toHaveBeenCalledWith('catchup');
+    sync.start.mockClear();
+    saveSettings(db, { ...DEFAULT_SETTINGS, intervalHours: 1 });
+    s.reschedule();
+    expect(sync.start).not.toHaveBeenCalled();
+    vi.advanceTimersByTime(0);
+    expect(sync.start).toHaveBeenCalledWith('scheduled');
+  });
 });
