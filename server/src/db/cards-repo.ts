@@ -2,6 +2,7 @@ import type {
   AlertState,
   CardBlueprint,
   Condition,
+  ExpansionRef,
   Language,
   Listing,
   SyncStatus,
@@ -20,6 +21,7 @@ interface CardRecord extends PurchaseColumns {
   image_url: string | null;
   group_id: number | null;
   expansion_ids: string;
+  excluded_expansions: string;
   languages: string;
   min_condition: string;
   foil: number | null;
@@ -44,6 +46,7 @@ export interface NewCard {
   scryfallOracleId: string;
   imageUrl: string | null;
   expansionIds: number[];
+  excludedExpansions?: ExpansionRef[];
   languages: Language[];
   minCondition: Condition;
   foil: boolean | null;
@@ -59,6 +62,7 @@ const COLUMNS: Record<keyof CardPatch, string> = {
   imageUrl: 'image_url',
   groupId: 'group_id',
   expansionIds: 'expansion_ids',
+  excludedExpansions: 'excluded_expansions',
   languages: 'languages',
   minCondition: 'min_condition',
   foil: 'foil',
@@ -81,7 +85,9 @@ const SELECT_CARDS = `SELECT t.*, ${PURCHASE_COLUMNS} FROM tracked_cards t ${pur
 
 function encode(key: keyof CardPatch, value: unknown): SqlValue {
   if (value === null || value === undefined) return null;
-  if (key === 'expansionIds' || key === 'languages' || key === 'lastListing') return JSON.stringify(value);
+  if (key === 'expansionIds' || key === 'excludedExpansions' || key === 'languages' || key === 'lastListing') {
+    return JSON.stringify(value);
+  }
   if (key === 'foil') return value ? 1 : 0;
   return value as SqlValue;
 }
@@ -103,6 +109,7 @@ function toCard(db: Db, r: CardRecord): TrackedCard {
     groupId: r.group_id,
     expansionIds,
     expansionNames: expansionIds.length > 0 ? expansionNames(db, r.id) : [],
+    excludedExpansions: JSON.parse(r.excluded_expansions) as ExpansionRef[],
     languages: JSON.parse(r.languages) as Language[],
     minCondition: r.min_condition as Condition,
     foil: r.foil === null ? null : r.foil === 1,
@@ -139,8 +146,9 @@ export function insertCard(db: Db, c: NewCard, now: Date = new Date()): TrackedC
   const res = db
     .prepare(
       `INSERT INTO tracked_cards
-        (name, scryfall_oracle_id, image_url, group_id, expansion_ids, languages, min_condition, foil, threshold_cents, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        (name, scryfall_oracle_id, image_url, group_id, expansion_ids, excluded_expansions, languages, min_condition, foil,
+         threshold_cents, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     )
     .run(
       c.name,
@@ -148,6 +156,7 @@ export function insertCard(db: Db, c: NewCard, now: Date = new Date()): TrackedC
       c.imageUrl,
       c.groupId ?? null,
       JSON.stringify(c.expansionIds),
+      JSON.stringify(c.excludedExpansions ?? []),
       JSON.stringify(c.languages),
       c.minCondition,
       c.foil === null ? null : c.foil ? 1 : 0,

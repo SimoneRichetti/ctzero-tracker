@@ -98,10 +98,14 @@ export class Catalog {
     return { name: card.name, oracleId: card.oracle_id, imageUrl: cardImage(card), printings, scryfallIdsByExpansion: ids };
   }
 
-  /** Empty `expansionIds` = all expansions the card exists in. */
-  async resolveBlueprints(lookup: CardLookup, expansionIds: number[]): Promise<CardBlueprint[]> {
+  /** Empty `expansionIds` = all expansions the card exists in, minus `excludedExpansionIds`. */
+  async resolveBlueprints(lookup: CardLookup, expansionIds: number[], excludedExpansionIds: number[] = []): Promise<CardBlueprint[]> {
     const available = lookup.scryfallIdsByExpansion;
-    const targets = expansionIds.length > 0 ? expansionIds.filter((id) => available.has(id)) : [...available.keys()];
+    const excluded = new Set(excludedExpansionIds);
+    const targets =
+      expansionIds.length > 0
+        ? expansionIds.filter((id) => available.has(id))
+        : [...available.keys()].filter((id) => !excluded.has(id));
     const names = new Map(lookup.printings.map((p) => [p.expansionId, p.expansionName]));
     const out: CardBlueprint[] = [];
     for (const expansionId of targets) {

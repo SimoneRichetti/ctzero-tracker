@@ -90,7 +90,7 @@ describe('cards API', () => {
     const { app, cards } = setup();
     const res = await app.inject({ method: 'POST', url: '/api/cards', payload: body });
     expect(res.statusCode).toBe(201);
-    expect(cards.create).toHaveBeenCalledWith(body);
+    expect(cards.create).toHaveBeenCalledWith({ ...body, excludedExpansionIds: [] });
   });
 
   it('POST /api/cards invalid → 400 with the offending field', async () => {
@@ -106,7 +106,7 @@ describe('cards API', () => {
     const res = await app.inject({ method: 'PUT', url: '/api/cards/3', payload: body });
     expect(res.statusCode).toBe(200);
     const { name: _name, ...update } = body;
-    expect(cards.update).toHaveBeenCalledWith(3, update);
+    expect(cards.update).toHaveBeenCalledWith(3, { ...update, excludedExpansionIds: [] });
   });
 
   it('DELETE nonexistent → 404', async () => {

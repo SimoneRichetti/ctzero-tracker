@@ -251,7 +251,8 @@ export class SyncService {
     if (card.expansionIds.length > 0 || this.now().getTime() - resolvedAt < BLUEPRINT_REFRESH_MS) return current;
     try {
       const lookup = await catalog.lookup(card.name);
-      const fresh = await catalog.resolveBlueprints(lookup, []);
+      const excluded = card.excludedExpansions.map((e) => e.expansionId);
+      const fresh = await catalog.resolveBlueprints(lookup, [], excluded);
       const now = this.now();
       const replaced = transaction(db, () => {
         const latest = getCard(db, card.id);

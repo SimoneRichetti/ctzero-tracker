@@ -113,6 +113,21 @@ describe('Catalog.resolveBlueprints', () => {
     expect(ct.blueprints).toHaveBeenCalledWith(2);
   });
 
+  it('with "any" expansion skips the excluded ones', async () => {
+    const lookup = await catalog.lookup('ragavan');
+    await expect(catalog.resolveBlueprints(lookup, [], [2])).resolves.toEqual([
+      { blueprintId: 100, expansionId: 1, expansionName: 'Modern Horizons 2' },
+    ]);
+    expect(ct.blueprints).toHaveBeenCalledTimes(1);
+    expect(ct.blueprints).toHaveBeenCalledWith(1);
+  });
+
+  it('exclusions do not apply to specific expansions; excluding everything throws ValidationError', async () => {
+    const lookup = await catalog.lookup('ragavan');
+    await expect(catalog.resolveBlueprints(lookup, [2], [2])).resolves.toHaveLength(1);
+    await expect(catalog.resolveBlueprints(lookup, [], [1, 2])).rejects.toBeInstanceOf(ValidationError);
+  });
+
   it('without matched blueprints throws ValidationError', async () => {
     const lookup = await catalog.lookup('ragavan');
     await expect(catalog.resolveBlueprints(lookup, [99])).rejects.toBeInstanceOf(ValidationError);

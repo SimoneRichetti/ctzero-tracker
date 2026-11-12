@@ -10,9 +10,17 @@ function finish(foil: boolean | null): string {
 }
 
 /** One-line summary of which offers count for a card, e.g. "Any expansion · EN, IT · ≥ NM · Non-foil". */
-export function cardMetaLine(card: Pick<TrackedCard, 'expansionNames' | 'languages' | 'minCondition' | 'foil'>): string {
+type MetaFields = 'expansionNames' | 'excludedExpansions' | 'languages' | 'minCondition' | 'foil';
+
+function anyExpansion(excluded: TrackedCard['excludedExpansions']): string {
+  if (excluded.length === 0) return 'Any expansion';
+  return excluded.length === 1 ? `Any expansion except ${excluded[0]!.expansionName}` : `Any expansion except ${excluded.length}`;
+}
+
+export function cardMetaLine(card: Pick<TrackedCard, MetaFields>): string {
   const names = card.expansionNames;
-  const expansions = names.length === 0 ? 'Any expansion' : names.length <= 2 ? names.join(', ') : `${names[0]}, +${names.length - 1} more`;
+  const expansions =
+    names.length === 0 ? anyExpansion(card.excludedExpansions) : names.length <= 2 ? names.join(', ') : `${names[0]}, +${names.length - 1} more`;
   return [expansions, languageList(card.languages), `≥ ${CONDITION_ABBR[card.minCondition]}`, finish(card.foil)].join(' · ');
 }
 

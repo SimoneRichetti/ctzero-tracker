@@ -22,6 +22,8 @@ import MultiSelect from 'primevue/multiselect';
 import Select from 'primevue/select';
 import { computed, ref, watch } from 'vue';
 import { api } from '../api';
+import { useAdditiveSelectAll } from '../additive-select-all';
+import SelectedExpansions from './SelectedExpansions.vue';
 import { FINISH_OPTIONS, finishModel } from '../finish-choice';
 
 /** Creates a card; editing happens in the detail panel. */
@@ -33,6 +35,7 @@ const name = ref('');
 const suggestions = ref<string[]>([]);
 const lookup = ref<CardLookupDto | null>(null);
 const expansionIds = ref<number[]>([]);
+const excludedExpansionIds = ref<number[]>([]);
 const languages = ref<Language[]>([]);
 const minCondition = ref<Condition>('Near Mint');
 const foil = ref<boolean | null>(null);
@@ -48,6 +51,11 @@ const saving = ref(false);
 const conditionOptions = [...CONDITIONS];
 const languageOptions = LANGUAGES.map((code) => ({ code, label: LANGUAGE_LABELS[code] }));
 const expansionOptions = computed(() => lookup.value?.printings ?? []);
+const printingLabel = (p: { expansionName: string }) => p.expansionName;
+const printingId = (p: { expansionId: number }) => p.expansionId;
+const namedPrintings = computed(() => expansionOptions.value.map((p) => ({ id: p.expansionId, name: p.expansionName })));
+const expansionSelect = useAdditiveSelectAll(expansionIds, expansionOptions, printingLabel, printingId);
+const excludedSelect = useAdditiveSelectAll(excludedExpansionIds, expansionOptions, printingLabel, printingId);
 const canSave = computed(() => lookup.value !== null && thresholdEuro.value !== null && euroToCents(thresholdEuro.value) >= MIN_THRESHOLD_CENTS);
 
 watch(visible, (open) => {
@@ -55,9 +63,17 @@ watch(visible, (open) => {
 });
 
 // A preview computed with different filters is no longer valid.
-watch([expansionIds, languages, minCondition, foil], () => {
+watch([expansionIds, excludedExpansionIds, languages, minCondition, foil], () => {
   preview.value = null;
 });
+
+// Exclusions only make sense with "any expansion": picking expansions drops them.
+watch(
+  () => expansionIds.value.length,
+  (n) => {
+    if (n > 0 && excludedExpansionIds.value.length > 0) excludedExpansionIds.value = [];
+  },
+);
 
 // If the name is changed after selection, the loaded card is no longer valid.
 watch(name, (value) => {
@@ -73,6 +89,7 @@ function reset() {
   lookup.value = null;
   name.value = '';
   expansionIds.value = [];
+  excludedExpansionIds.value = [];
   languages.value = [];
   minCondition.value = 'Near Mint';
   foil.value = null;
@@ -92,6 +109,7 @@ async function complete(event: AutoCompleteCompleteEvent) {
 
 async function onSelect(event: AutoCompleteOptionSelectEvent) {
   expansionIds.value = [];
+  excludedExpansionIds.value = [];
   await loadLookup(event.value as string);
 }
 
@@ -112,6 +130,7 @@ async function loadLookup(cardName: string) {
 function filters() {
   return {
     expansionIds: expansionIds.value,
+    excludedExpansionIds: excludedExpansionIds.value,
     languages: languages.value,
     minCondition: minCondition.value,
     foil: foil.value,
@@ -184,14 +203,38 @@ async function save() {
           <MultiSelect
             v-model="expansionIds"
             input-id="expansions"
+            :select-all="expansionSelect.selectAll"
+            @filter="expansionSelect.onFilter"
+            @selectall-change="expansionSelect.onSelectAllChange"
             :options="expansionOptions"
             option-label="expansionName"
             option-value="expansionId"
             placeholder="Any expansion"
-            display="chip"
+            :max-selected-labels="0"
+            selected-items-label="{0} selected"
             filter
             fluid
           />
+          <SelectedExpansions v-model="expansionIds" :options="namedPrintings" />
+        </div>
+        <div v-if="expansionIds.length === 0" class="field">
+          <label for="excluded-expansions">Except expansions</label>
+          <MultiSelect
+            v-model="excludedExpansionIds"
+            input-id="excluded-expansions"
+            :select-all="excludedSelect.selectAll"
+            @filter="excludedSelect.onFilter"
+            @selectall-change="excludedSelect.onSelectAllChange"
+            :options="expansionOptions"
+            option-label="expansionName"
+            option-value="expansionId"
+            placeholder="No exclusions"
+            :max-selected-labels="0"
+            selected-items-label="{0} selected"
+            filter
+            fluid
+          />
+          <SelectedExpansions v-model="excludedExpansionIds" :options="namedPrintings" />
         </div>
         <div class="field">
           <label for="languages">Languages</label>

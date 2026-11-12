@@ -10,6 +10,7 @@ function card(overrides: Partial<TrackedCard>): TrackedCard {
     imageUrl: null,
     expansionIds: [],
     expansionNames: [],
+    excludedExpansions: [],
     languages: [],
     minCondition: 'Near Mint',
     foil: false,

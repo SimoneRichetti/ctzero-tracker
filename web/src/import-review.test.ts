@@ -146,6 +146,7 @@ describe('createPayload', () => {
     expect(createPayload(row!, { languages: ['en'], minCondition: 'Near Mint', groupId: 4 })).toEqual({
       name: 'Sol Ring',
       expansionIds: [7],
+      excludedExpansionIds: [],
       languages: ['en'],
       minCondition: 'Near Mint',
       foil: true,

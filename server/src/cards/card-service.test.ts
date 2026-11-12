@@ -21,6 +21,7 @@ const blueprints: CardBlueprint[] = [{ blueprintId: 100, expansionId: 1, expansi
 const input: CardInput = {
   name: 'ragavan',
   expansionIds: [1],
+  excludedExpansionIds: [],
   languages: ['en'],
   minCondition: 'Near Mint',
   foil: false,
@@ -181,6 +182,61 @@ describe('changes during the immediate refresh', () => {
   });
 });
 
+describe('excluded expansions', () => {
+  const anyLookup: CardLookup = {
+    ...lookup,
+    printings: [
+      { expansionId: 1, expansionName: 'MH2', code: 'mh2' },
+      { expansionId: 2, expansionName: 'Secret Lair', code: 'sld' },
+    ],
+  };
+  const anyInput: CardInput = { ...input, expansionIds: [], excludedExpansionIds: [2] };
+
+  beforeEach(() => {
+    catalog.lookup.mockResolvedValue(anyLookup);
+  });
+
+  it('create stores the exclusions with their names and skips them when resolving blueprints', async () => {
+    const card = await service.create({ ...anyInput, excludedExpansionIds: [2, 99] });
+    expect(catalog.resolveBlueprints).toHaveBeenCalledWith(anyLookup, [], [2, 99]);
+    expect(card.excludedExpansions).toEqual([{ expansionId: 2, expansionName: 'Secret Lair' }]);
+  });
+
+  it('are ignored when specific expansions are chosen', async () => {
+    const card = await service.create({ ...anyInput, expansionIds: [1] });
+    expect(catalog.resolveBlueprints).toHaveBeenCalledWith(anyLookup, [1], []);
+    expect(card.excludedExpansions).toEqual([]);
+  });
+
+  it('changing them is a filter change: new version and blueprints recomputed', async () => {
+    const card = await service.create({ ...anyInput, excludedExpansionIds: [] });
+    const { name: _n, ...anyUpdate } = anyInput;
+    const updated = await service.update(card.id, anyUpdate);
+    expect(updated).toMatchObject({ configVersion: 2, excludedExpansions: [{ expansionId: 2, expansionName: 'Secret Lair' }] });
+    expect(catalog.resolveBlueprints).toHaveBeenLastCalledWith(anyLookup, [], [2]);
+    catalog.resolveBlueprints.mockClear();
+    expect(await service.update(card.id, anyUpdate)).toMatchObject({ configVersion: 2 });
+    expect(catalog.resolveBlueprints).not.toHaveBeenCalled();
+  });
+
+  it('excluding an expansion the card is not printed in changes nothing (no reset, no re-pricing)', async () => {
+    const card = await service.create({ ...anyInput, excludedExpansionIds: [] });
+    catalog.resolveBlueprints.mockClear();
+    ct.products.mockClear();
+    const { name: _n, ...anyUpdate } = anyInput;
+    const updated = await service.update(card.id, { ...anyUpdate, excludedExpansionIds: [99], thresholdCents: 3000 });
+    expect(updated).toMatchObject({ configVersion: 1, excludedExpansions: [], thresholdCents: 3000, lastPriceCents: card.lastPriceCents });
+    expect(catalog.resolveBlueprints).not.toHaveBeenCalled();
+    expect(ct.products).not.toHaveBeenCalled();
+  });
+
+  it('preview applies them too', async () => {
+    const { thresholdCents: _t, groupId: _g, ...filters } = anyInput;
+    await service.preview(filters);
+    expect(catalog.resolveBlueprints).toHaveBeenCalledWith(anyLookup, [], [2]);
+  });
+});
+
 describe('delete', () => {
   it('nonexistent id → NotFoundError', () => {
     expect(() => service.delete(999)).toThrow(NotFoundError);
@@ -189,7 +245,8 @@ describe('delete', () => {
 
 describe('preview', () => {
   it('computes price and presets without saving', async () => {
-    const result = await service.preview({ name: 'ragavan', expansionIds: [], languages: [], minCondition: 'Near Mint', foil: false });
+    const filters = { name: 'ragavan', expansionIds: [], excludedExpansionIds: [], languages: [], minCondition: 'Near Mint' as const, foil: false };
+    const result = await service.preview(filters);
     expect(result.priceCents).toBe(3800);
     expect(result.blueprintCount).toBe(1);
     expect(result.presets[0]).toEqual({ label: '-10%', cents: 3420 });

@@ -148,6 +148,9 @@ export const MIGRATIONS: string[] = [
     SELECT id, 'card', tracked_card_id, name, image_url, start_price_cents, price_paid_cents, purchased_at FROM card_purchases;
   DROP TABLE card_purchases;
   `,
+  `
+  ALTER TABLE tracked_cards ADD COLUMN excluded_expansions TEXT NOT NULL DEFAULT '[]';
+  `,
 ];
 
 export function openDb(path: string): Db {
