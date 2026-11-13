@@ -107,6 +107,47 @@ export const MIGRATIONS: string[] = [
   ALTER TABLE tracked_cards DROP COLUMN foil;
   ALTER TABLE tracked_cards RENAME COLUMN foil_filter TO foil;
   `,
+  `
+  ALTER TABLE tracked_cards ADD COLUMN start_price_cents INTEGER;
+  ALTER TABLE tracked_cards ADD COLUMN start_price_at TEXT;
+  UPDATE tracked_cards SET (start_price_cents, start_price_at) = (
+    SELECT s.price_cents, s.synced_at FROM price_snapshots s
+    WHERE s.tracked_card_id = tracked_cards.id AND s.price_cents IS NOT NULL
+    ORDER BY s.id LIMIT 1
+  );
+  CREATE TABLE card_purchases (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    tracked_card_id INTEGER UNIQUE REFERENCES tracked_cards(id) ON DELETE SET NULL,
+    name TEXT NOT NULL,
+    image_url TEXT,
+    start_price_cents INTEGER,
+    price_paid_cents INTEGER NOT NULL,
+    purchased_at TEXT NOT NULL
+  );
+  `,
+  `
+  ALTER TABLE tracked_sealed ADD COLUMN start_price_cents INTEGER;
+  ALTER TABLE tracked_sealed ADD COLUMN start_price_at TEXT;
+  UPDATE tracked_sealed SET (start_price_cents, start_price_at) = (
+    SELECT s.price_cents, s.synced_at FROM sealed_price_snapshots s
+    WHERE s.tracked_sealed_id = tracked_sealed.id AND s.price_cents IS NOT NULL
+    ORDER BY s.id LIMIT 1
+  );
+  CREATE TABLE purchases (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    kind TEXT NOT NULL CHECK (kind IN ('card', 'sealed')),
+    tracked_card_id INTEGER UNIQUE REFERENCES tracked_cards(id) ON DELETE SET NULL,
+    tracked_sealed_id INTEGER UNIQUE REFERENCES tracked_sealed(id) ON DELETE SET NULL,
+    name TEXT NOT NULL,
+    image_url TEXT,
+    start_price_cents INTEGER,
+    price_paid_cents INTEGER NOT NULL,
+    purchased_at TEXT NOT NULL
+  );
+  INSERT INTO purchases (id, kind, tracked_card_id, name, image_url, start_price_cents, price_paid_cents, purchased_at)
+    SELECT id, 'card', tracked_card_id, name, image_url, start_price_cents, price_paid_cents, purchased_at FROM card_purchases;
+  DROP TABLE card_purchases;
+  `,
 ];
 
 export function openDb(path: string): Db {

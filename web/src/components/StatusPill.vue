@@ -33,6 +33,10 @@ const visible = computed(() => props.always || meta.value.tone !== 'neutral');
   background: var(--ct-danger-soft);
   color: var(--ct-danger);
 }
+.done {
+  background: var(--ct-chip);
+  color: var(--ct-ink);
+}
 .neutral {
   background: var(--ct-chip);
   color: var(--ct-muted);

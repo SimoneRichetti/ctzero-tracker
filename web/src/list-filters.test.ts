@@ -30,10 +30,17 @@ describe('tabs', () => {
     expect(tabOf('no_offers')).toBe('attention');
     expect(tabOf('error')).toBe('attention');
     expect(tabOf('pending')).toBeNull();
+    expect(tabOf('bought')).toBe('bought');
   });
 
   it('counts, with pending only under all', () => {
-    expect(tabCounts([below, above, noOffers, failed, pending])).toEqual({ all: 5, below: 1, watching: 1, attention: 2 });
+    expect(tabCounts([below, above, noOffers, failed, pending])).toEqual({ all: 5, below: 1, watching: 1, attention: 2, bought: 0 });
+  });
+
+  it('a bought card only counts as bought, whatever its last price', () => {
+    const bought = item('Bought', { lastPriceCents: 900, alertState: 'below', purchase: { pricePaidCents: 900, startPriceCents: 1000, savedCents: 100, purchasedAt: '' } });
+    expect(tabCounts([bought, below])).toEqual({ all: 2, below: 1, watching: 0, attention: 0, bought: 1 });
+    expect(filterByTab([bought, below], 'bought').map((i) => i.name)).toEqual(['Bought']);
   });
 
   it('filters', () => {

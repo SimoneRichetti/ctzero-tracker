@@ -29,6 +29,9 @@ export type CardInput = z.infer<typeof cardInputSchema>;
 export const cardUpdateSchema = cardInputSchema.omit({ name: true });
 export type CardUpdate = z.infer<typeof cardUpdateSchema>;
 
+export const purchaseInputSchema = z.object({ pricePaidCents: z.number().int().min(1) });
+export type PurchaseInput = z.infer<typeof purchaseInputSchema>;
+
 export const groupInputSchema = z.object({ name: z.string().trim().min(1).max(80) });
 export type GroupInput = z.infer<typeof groupInputSchema>;
 

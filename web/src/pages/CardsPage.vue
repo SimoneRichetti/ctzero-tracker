@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import type { BulkResult, TrackedCard, TrackedCardRow } from '@ctzero/shared';
+import { formatEuro, type BulkResult, type TrackedCard, type TrackedCardRow, type TrackedSealed } from '@ctzero/shared';
 import Button from 'primevue/button';
 import InputText from 'primevue/inputtext';
 import Menu from 'primevue/menu';
@@ -17,7 +17,7 @@ import BulkThresholdDialog from '../components/BulkThresholdDialog.vue';
 import CardDialog from '../components/CardDialog.vue';
 import ItemDrawer from '../components/ItemDrawer.vue';
 import TrackedList from '../components/TrackedList.vue';
-import { filterByGroup, parseGroupFilter } from '../group-summary';
+import { filterByGroup, parseGroupFilter, purchaseTotals } from '../group-summary';
 import { useOpenItem } from '../open-item';
 
 /** 'all', 'none' (ungrouped) or a group id from `/groups/:id`. */
@@ -26,7 +26,7 @@ const props = defineProps<{ scope: string }>();
 const toast = useToast();
 const confirm = useConfirm();
 const router = useRouter();
-const { cards, groups, groupNames, loading, loaded, reloadCardsAndGroups, reloadGroups } = useCatalog();
+const { cards, groups, groupNames, purchases, loading, loaded, reloadCardsAndGroups, reloadGroups, reloadPurchases } = useCatalog();
 
 const groupFilter = computed(() =>
   parseGroupFilter(
@@ -71,6 +71,23 @@ function onDeleted(card: TrackedCardRow) {
   closeItem();
   void reloadCardsAndGroups();
 }
+
+function onPurchased(card: TrackedCard | TrackedSealed, bought: boolean) {
+  const saved = card.purchase?.savedCents;
+  toast.add({
+    severity: 'success',
+    summary: bought ? `${card.name} marked as bought` : `${card.name} is tracked again`,
+    detail: bought && saved != null && saved > 0 ? `You saved ${formatEuro(saved)}` : undefined,
+    life: 4000,
+  });
+  void reloadCardsAndGroups();
+  void reloadPurchases();
+}
+
+// The "All cards" total also counts cards bought and then removed, which are no longer in the list.
+const savings = computed(() =>
+  groupFilter.value === 'all' && purchases.value ? purchaseTotals(purchases.value.items, 'card') : undefined,
+);
 
 // ---------- add ----------
 const addVisible = ref(false);
@@ -248,6 +265,7 @@ function confirmBulkDelete() {
       :group-names="groupFilter === 'all' ? groupNames : undefined"
       :open-id="openId"
       :empty-text="emptyText"
+      :savings="savings"
       @open="openCard"
     />
 
@@ -259,7 +277,15 @@ function confirmBulkDelete() {
     </BulkBar>
   </div>
 
-  <ItemDrawer kind="card" :item="openItem" :groups="groups" @close="closeItem" @saved="onSaved($event as TrackedCard)" @deleted="onDeleted($event as TrackedCardRow)" />
+  <ItemDrawer
+    kind="card"
+    :item="openItem"
+    :groups="groups"
+    @close="closeItem"
+    @saved="onSaved($event as TrackedCard)"
+    @deleted="onDeleted($event as TrackedCardRow)"
+    @purchased="onPurchased"
+  />
   <CardDialog v-model:visible="addVisible" :groups="groups" :default-group-id="group?.id ?? null" @saved="onAdded" />
   <BulkThresholdDialog v-model:visible="thresholdVisible" kind="card" :items="selected" @done="onBulkDone" />
   <BulkGroupDialog v-model:visible="groupVisible" :cards="selected" :groups="groups" @done="onBulkDone" @groups-changed="reloadGroups" />

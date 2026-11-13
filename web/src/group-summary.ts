@@ -1,3 +1,4 @@
+import type { ItemKind, PurchaseRecord } from '@ctzero/shared';
 import { cardStatus, type PricedItem } from './card-status';
 
 /** Group shown in the cards page: every card, cards without a group, or one group. */
@@ -23,6 +24,7 @@ export function filterByGroup<T extends { groupId: number | null }>(cards: T[], 
 }
 
 export interface GroupSummary {
+  /** Cards still tracked: bought ones only count in `bought` and `savedCents`. */
   count: number;
   below: number;
   /** No offers or last update failed. */
@@ -31,11 +33,34 @@ export interface GroupSummary {
   totalThresholdCents: number;
   /** Cards not counted in `totalPriceCents`. */
   missingPrice: number;
+  bought: number;
+  /** Saved on the bought cards against their start price (unknown savings count as 0). */
+  savedCents: number;
+}
+
+/** Savings of the purchases of one kind, including items no longer tracked. */
+export function purchaseTotals(items: PurchaseRecord[], kind: ItemKind): { savedCents: number; count: number } {
+  const ofKind = items.filter((p) => p.kind === kind);
+  return { savedCents: ofKind.reduce((sum, p) => sum + (p.savedCents ?? 0), 0), count: ofKind.length };
 }
 
 export function summarize(cards: PricedItem[]): GroupSummary {
-  const s: GroupSummary = { count: 0, below: 0, problems: 0, totalPriceCents: 0, totalThresholdCents: 0, missingPrice: 0 };
+  const s: GroupSummary = {
+    count: 0,
+    below: 0,
+    problems: 0,
+    totalPriceCents: 0,
+    totalThresholdCents: 0,
+    missingPrice: 0,
+    bought: 0,
+    savedCents: 0,
+  };
   for (const c of cards) {
+    if (c.purchase) {
+      s.bought++;
+      s.savedCents += c.purchase.savedCents ?? 0;
+      continue;
+    }
     const status = cardStatus(c);
     s.count++;
     if (status === 'below') s.below++;

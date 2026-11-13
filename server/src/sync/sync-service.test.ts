@@ -13,6 +13,7 @@ import {
   type NewCard,
 } from '../db/cards-repo';
 import { openDb, type Db } from '../db/db';
+import { upsertPurchase } from '../db/purchases-repo';
 import { getRun } from '../db/runs-repo';
 import { deleteSealed, getSealed, insertSealed, listSealedSnapshots, updateSealed } from '../db/sealed-repo';
 import { saveSettings } from '../db/settings-repo';
@@ -165,6 +166,21 @@ describe('SyncService', () => {
     release();
     await service.waitForIdle();
     expect(getRun(db, first.run.id)!.status).toBe('ok');
+  });
+
+  it('bought cards and products are neither updated nor notified', async () => {
+    const card = addCard('Ragavan', 100, 5000);
+    upsertPurchase(db, 'card', card, 4000, t0);
+    const box = addSealed('Box', 200, 20000);
+    upsertPurchase(db, 'sealed', box, 15000, t0);
+    prices.set(100, 3000);
+    prices.set(200, 10000);
+    service.start('manual');
+    await service.waitForIdle();
+    expect(getRun(db, 1)).toMatchObject({ status: 'ok', cardsTotal: 0 });
+    expect(listSnapshots(db, card.id)).toEqual([]);
+    expect(listSealedSnapshots(db, box.id)).toEqual([]);
+    expect(telegram.sendMessage).not.toHaveBeenCalled();
   });
 
   it('a card deleted during the run is skipped', async () => {

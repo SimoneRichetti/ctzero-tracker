@@ -1,4 +1,4 @@
-import type { CardGroup, HealthDto, TrackedCardRow, TrackedSealedRow } from '@ctzero/shared';
+import type { CardGroup, HealthDto, PurchasesDto, TrackedCardRow, TrackedSealedRow } from '@ctzero/shared';
 import { computed, reactive, ref } from 'vue';
 import { api } from './api';
 import { latestRequest } from './latest-request';
@@ -11,13 +11,15 @@ import { cardNavCounts, countItems } from './nav-summary';
 const cards = ref<TrackedCardRow[]>([]);
 const sealed = ref<TrackedSealedRow[]>([]);
 const groups = ref<CardGroup[]>([]);
+/** Every purchase, also of items no longer tracked: the savings totals. */
+const purchases = ref<PurchasesDto | null>(null);
 const health = ref<HealthDto | null>(null);
-const loading = reactive({ cards: false, sealed: false, groups: false });
+const loading = reactive({ cards: false, sealed: false, groups: false, purchases: false });
 /** True once a load of each list has succeeded, so the pages can tell "empty" from "not loaded (yet)". */
-const loaded = reactive({ cards: false, sealed: false, groups: false });
+const loaded = reactive({ cards: false, sealed: false, groups: false, purchases: false });
 
 let onError: (message: string) => void = () => {};
-const requests = { cards: latestRequest(), sealed: latestRequest(), groups: latestRequest() };
+const requests = { cards: latestRequest(), sealed: latestRequest(), groups: latestRequest(), purchases: latestRequest() };
 
 /** Set once by App.vue, which can show toasts. */
 export function setCatalogErrorHandler(handler: (message: string) => void) {
@@ -47,6 +49,7 @@ async function load<T>(key: ListKey, path: string, assign: (data: T) => void) {
 const reloadCards = () => load<TrackedCardRow[]>('cards', '/api/cards', (d) => (cards.value = d));
 const reloadSealed = () => load<TrackedSealedRow[]>('sealed', '/api/sealed', (d) => (sealed.value = d));
 const reloadGroups = () => load<CardGroup[]>('groups', '/api/groups', (d) => (groups.value = d));
+const reloadPurchases = () => load<PurchasesDto>('purchases', '/api/purchases', (d) => (purchases.value = d));
 
 async function loadHealth() {
   try {
@@ -62,7 +65,7 @@ function reloadCardsAndGroups() {
 }
 
 function reloadAll() {
-  return Promise.all([reloadCards(), reloadSealed(), reloadGroups()]).then(() => undefined);
+  return Promise.all([reloadCards(), reloadSealed(), reloadGroups(), reloadPurchases()]).then(() => undefined);
 }
 
 const sortedGroups = computed(() => [...groups.value].sort((a, b) => a.name.localeCompare(b.name, 'en')));
@@ -80,6 +83,7 @@ export function useCatalog() {
     cards,
     sealed,
     groups: sortedGroups,
+    purchases,
     groupNames,
     health,
     loading,
@@ -88,6 +92,7 @@ export function useCatalog() {
     reloadCards,
     reloadSealed,
     reloadGroups,
+    reloadPurchases,
     reloadCardsAndGroups,
     reloadAll,
     loadHealth,

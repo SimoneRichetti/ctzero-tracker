@@ -42,8 +42,42 @@ export interface TrackedCard {
   alertState: AlertState | null;
   lastNotifiedPriceCents: number | null;
   blueprintsResolvedAt: string | null;
+  /** First price ever recorded for the card (null = never priced yet). */
+  startPriceCents: number | null;
+  startPriceAt: string | null;
+  /** Set once the card is marked as bought: it is no longer updated nor alerted. */
+  purchase: Purchase | null;
   createdAt: string;
   updatedAt: string;
+}
+
+export type ItemKind = 'card' | 'sealed';
+
+export interface Purchase {
+  pricePaidCents: number;
+  /** Start price of the item when it was bought; null if it had never been priced. */
+  startPriceCents: number | null;
+  /** startPriceCents − pricePaidCents (negative = paid more); null if the start price is unknown. */
+  savedCents: number | null;
+  purchasedAt: string;
+}
+
+/** A purchase as stored for the savings total: it survives the item being removed. */
+export interface PurchaseRecord extends Purchase {
+  id: number;
+  kind: ItemKind;
+  /** Id of the tracked card or sealed product; null = no longer tracked. */
+  itemId: number | null;
+  name: string;
+  imageUrl: string | null;
+}
+
+export interface PurchasesDto {
+  /** Sum of `savedCents` of the purchases with a known start price. */
+  totalSavedCents: number;
+  totalPaidCents: number;
+  /** Newest first. */
+  items: PurchaseRecord[];
 }
 
 export interface CardBlueprint {
@@ -136,6 +170,11 @@ export interface TrackedSealed {
   lastError: string | null;
   alertState: AlertState | null;
   lastNotifiedPriceCents: number | null;
+  /** First price ever recorded for the product (null = never priced yet). */
+  startPriceCents: number | null;
+  startPriceAt: string | null;
+  /** Set once the product is marked as bought: it is no longer updated nor alerted. */
+  purchase: Purchase | null;
   createdAt: string;
   updatedAt: string;
 }

@@ -20,6 +20,8 @@ import {
   type NewCard,
 } from './cards-repo';
 import { MIGRATIONS, openDb, type Db } from './db';
+import { deletePurchaseOf, listPurchases, upsertPurchase } from './purchases-repo';
+import { getSealed } from './sealed-repo';
 import {
   failOrphanRuns,
   finishRun,
@@ -85,6 +87,88 @@ describe('openDb', () => {
     expect(getBlueprints(migrated, 1)).toHaveLength(1);
     expect(updateCard(migrated, 2, { foil: null }).foil).toBeNull();
     migrated.close();
+  });
+
+  it('backfills the start price from the first priced snapshot', () => {
+    const path = join(mkdtempSync(join(tmpdir(), 'ctzero-')), 'test.db');
+    const old = new DatabaseSync(path);
+    for (const m of MIGRATIONS.slice(0, 4)) old.exec(m);
+    old.exec('PRAGMA user_version = 4');
+    old.exec(`INSERT INTO tracked_cards (id, name, scryfall_oracle_id, min_condition, foil, threshold_cents, created_at, updated_at)
+      VALUES (1, 'A', 'oa', 'Near Mint', 0, 100, 'x', 'x'), (2, 'B', 'ob', 'Near Mint', 0, 100, 'x', 'x')`);
+    old.exec(`INSERT INTO price_snapshots (tracked_card_id, config_version, synced_at, price_cents) VALUES
+      (1, 1, 't0', NULL), (1, 1, 't1', 500), (1, 2, 't2', 300), (2, 1, 't0', NULL)`);
+    old.exec(`INSERT INTO tracked_sealed (id, name, blueprint_id, expansion_id, expansion_name, category_name, threshold_cents, created_at, updated_at)
+      VALUES (1, 'Box', 10, 5, 'Alpha', 'Booster Box', 100, 'x', 'x')`);
+    old.exec(`INSERT INTO sealed_price_snapshots (tracked_sealed_id, config_version, synced_at, price_cents) VALUES (1, 1, 't3', 9000), (1, 1, 't4', 8000)`);
+    old.close();
+    const migrated = openDb(path);
+    expect(getCard(migrated, 1)).toMatchObject({ startPriceCents: 500, startPriceAt: 't1', purchase: null });
+    expect(getCard(migrated, 2)).toMatchObject({ startPriceCents: null, startPriceAt: null });
+    expect(getSealed(migrated, 1)).toMatchObject({ startPriceCents: 9000, startPriceAt: 't3', purchase: null });
+    migrated.close();
+  });
+});
+
+describe('migration 6', () => {
+  it('moves card purchases to the generic purchases table', () => {
+    const path = join(mkdtempSync(join(tmpdir(), 'ctzero-')), 'test.db');
+    const old = new DatabaseSync(path);
+    for (const m of MIGRATIONS.slice(0, 5)) old.exec(m);
+    old.exec('PRAGMA user_version = 5');
+    old.exec(`INSERT INTO tracked_cards (id, name, scryfall_oracle_id, min_condition, foil, threshold_cents, start_price_cents, created_at, updated_at)
+      VALUES (1, 'A', 'oa', 'Near Mint', 0, 100, 633, 'x', 'x')`);
+    old.exec(`INSERT INTO card_purchases (id, tracked_card_id, name, image_url, start_price_cents, price_paid_cents, purchased_at)
+      VALUES (1, 1, 'A', 'img', 633, 415, 't1'), (2, NULL, 'Gone', NULL, NULL, 200, 't0')`);
+    old.close();
+    const migrated = openDb(path);
+    expect(getCard(migrated, 1)!.purchase).toEqual({ pricePaidCents: 415, startPriceCents: 633, savedCents: 218, purchasedAt: 't1' });
+    expect(listPurchases(migrated).map((p) => [p.kind, p.itemId, p.name])).toEqual([
+      ['card', 1, 'A'],
+      ['card', null, 'Gone'],
+    ]);
+    migrated.close();
+  });
+});
+
+describe('start price and purchases', () => {
+  it('the first priced snapshot sets the start price, later ones do not change it', () => {
+    const card = insertCard(db, newCard, t0);
+    insertSnapshot(db, { cardId: card.id, configVersion: 1, syncedAt: t0.toISOString(), priceCents: null });
+    expect(getCard(db, card.id)!.startPriceCents).toBeNull();
+    insertSnapshot(db, { cardId: card.id, configVersion: 1, syncedAt: t1.toISOString(), priceCents: 400 });
+    insertSnapshot(db, { cardId: card.id, configVersion: 2, syncedAt: t2.toISOString(), priceCents: 250 });
+    expect(getCard(db, card.id)).toMatchObject({ startPriceCents: 400, startPriceAt: t1.toISOString() });
+  });
+
+  it('a purchase is shown on the card, replaced on a second purchase and kept when the card is deleted', () => {
+    const card = insertCard(db, newCard, t0);
+    insertSnapshot(db, { cardId: card.id, configVersion: 1, syncedAt: t0.toISOString(), priceCents: 400 });
+    upsertPurchase(db, 'card', getCard(db, card.id)!, 300, t1);
+    expect(getCard(db, card.id)!.purchase).toEqual({
+      pricePaidCents: 300,
+      startPriceCents: 400,
+      savedCents: 100,
+      purchasedAt: t1.toISOString(),
+    });
+    upsertPurchase(db, 'card', getCard(db, card.id)!, 450, t2);
+    expect(getCard(db, card.id)!.purchase).toMatchObject({ pricePaidCents: 450, savedCents: -50 });
+    expect(listCards(db)[0]!.purchase?.pricePaidCents).toBe(450);
+
+    deleteCard(db, card.id);
+    expect(listPurchases(db)).toEqual([
+      { id: 1, kind: 'card', itemId: null, name: 'Lightning Bolt', imageUrl: null, pricePaidCents: 450, startPriceCents: 400, savedCents: -50, purchasedAt: t2.toISOString() },
+    ]);
+  });
+
+  it('a card never priced has an unknown saving; undoing removes the purchase', () => {
+    const card = insertCard(db, newCard, t0);
+    upsertPurchase(db, 'card', card, 300, t1);
+    expect(getCard(db, card.id)!.purchase).toMatchObject({ startPriceCents: null, savedCents: null });
+    expect(deletePurchaseOf(db, 'card', card.id)).toBe(true);
+    expect(deletePurchaseOf(db, 'card', card.id)).toBe(false);
+    expect(getCard(db, card.id)!.purchase).toBeNull();
+    expect(listPurchases(db)).toEqual([]);
   });
 });
 

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { filterByGroup, groupFilterPath, parseGroupFilter, summarize } from './group-summary';
+import { filterByGroup, groupFilterPath, parseGroupFilter, purchaseTotals, summarize } from './group-summary';
 
 describe('parseGroupFilter', () => {
   it('reads all / none / existing ids', () => {
@@ -39,10 +39,48 @@ describe('summarize', () => {
       { ...base, thresholdCents: 300, lastPriceCents: null, lastSyncStatus: 'no_offers' },
       { ...base, thresholdCents: 200, lastPriceCents: null, lastSyncStatus: 'error' },
     ]);
-    expect(s).toEqual({ count: 4, below: 1, problems: 2, totalPriceCents: 1600, totalThresholdCents: 2000, missingPrice: 2 });
+    expect(s).toEqual({
+      count: 4,
+      below: 1,
+      problems: 2,
+      totalPriceCents: 1600,
+      totalThresholdCents: 2000,
+      missingPrice: 2,
+      bought: 0,
+      savedCents: 0,
+    });
+  });
+
+  it('counts bought cards apart, with their savings', () => {
+    const purchase = { pricePaidCents: 800, startPriceCents: 1000, savedCents: 200, purchasedAt: '' };
+    const s = summarize([
+      { ...base, thresholdCents: 1000, lastPriceCents: 900, alertState: 'below', purchase },
+      { ...base, thresholdCents: 500, lastPriceCents: null, lastSyncStatus: 'error', purchase: { ...purchase, savedCents: null } },
+      { ...base, thresholdCents: 500, lastPriceCents: 700, purchase: null },
+    ]);
+    expect(s).toMatchObject({ count: 1, below: 0, problems: 0, totalPriceCents: 700, totalThresholdCents: 500, bought: 2, savedCents: 200 });
   });
 
   it('empty', () => {
-    expect(summarize([])).toEqual({ count: 0, below: 0, problems: 0, totalPriceCents: 0, totalThresholdCents: 0, missingPrice: 0 });
+    expect(summarize([])).toMatchObject({ count: 0, below: 0, problems: 0, totalPriceCents: 0, bought: 0, savedCents: 0 });
+  });
+});
+
+describe('purchaseTotals', () => {
+  const p = (kind: 'card' | 'sealed', savedCents: number | null) => ({
+    id: 1,
+    kind,
+    itemId: null,
+    name: 'x',
+    imageUrl: null,
+    pricePaidCents: 100,
+    startPriceCents: null,
+    savedCents,
+    purchasedAt: '',
+  });
+  it('sums the savings of one kind, unknown ones as 0', () => {
+    const items = [p('card', 300), p('card', -50), p('card', null), p('sealed', 1000)];
+    expect(purchaseTotals(items, 'card')).toEqual({ savedCents: 250, count: 3 });
+    expect(purchaseTotals(items, 'sealed')).toEqual({ savedCents: 1000, count: 1 });
   });
 });

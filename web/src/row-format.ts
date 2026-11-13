@@ -49,6 +49,23 @@ export function gapSentence(item: Pick<PricedItem, 'lastPriceCents' | 'threshold
   return `${formatEuro(item.lastPriceCents! - item.thresholdCents)} to go (${gap.pct.toFixed(1)}%)`;
 }
 
+/** How the current price compares to the start price, e.g. "now 12.5% lower". */
+export function sinceStart(item: Pick<TrackedCard, 'startPriceCents' | 'lastPriceCents'>): string | null {
+  const start = item.startPriceCents;
+  const now = item.lastPriceCents;
+  if (start === null || now === null) return null;
+  if (now === start) return 'unchanged since';
+  const pct = round1(Math.abs(((now - start) / start) * 100));
+  return `now ${pct.toFixed(1)}% ${now < start ? 'lower' : 'higher'}`;
+}
+
+/** "Saved €3.00", "Paid €0.50 more", "Saved nothing"; null if the start price is unknown. */
+export function savingText(savedCents: number | null): string | null {
+  if (savedCents === null) return null;
+  if (savedCents === 0) return 'Saved nothing';
+  return savedCents > 0 ? `Saved ${formatEuro(savedCents)}` : `Paid ${formatEuro(-savedCents)} more`;
+}
+
 export type ChangeTone = 'down' | 'up' | 'flat' | 'none';
 
 /** 7-day change: a falling price is good news for a buyer. The arrow keeps it readable without colour. */

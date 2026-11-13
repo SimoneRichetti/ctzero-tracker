@@ -9,6 +9,7 @@ import {
   type CardUpdate,
   type PreviewResult,
   type PriceHistoryDto,
+  type PurchaseInput,
   type TrackedCard,
   type TrackedCardRow,
 } from '@ctzero/shared';
@@ -28,6 +29,7 @@ import {
 } from '../db/cards-repo';
 import { transaction, type Db } from '../db/db';
 import { getGroup } from '../db/groups-repo';
+import { deletePurchaseOf, upsertPurchase } from '../db/purchases-repo';
 import { NotFoundError, ValidationError, errorMessage } from '../errors';
 import { priceCard } from '../pricing/card-pricer';
 import { computeTrend, trendSince } from '../pricing/trend';
@@ -179,6 +181,27 @@ export class CardService {
 
   delete(id: number): void {
     if (!deleteCard(this.deps.db, id)) throw new NotFoundError('Card not found');
+  }
+
+  /** Marks the card as bought: it stops being updated and the saving counts towards the total. */
+  purchase(id: number, input: PurchaseInput): TrackedCard {
+    const { db } = this.deps;
+    return transaction(db, () => {
+      const card = getCard(db, id);
+      if (!card) throw new NotFoundError('Card not found');
+      upsertPurchase(db, 'card', card, input.pricePaidCents, this.now());
+      return getCard(db, id)!;
+    });
+  }
+
+  /** Undoes a purchase: the card is tracked again from the next update. */
+  unpurchase(id: number): TrackedCard {
+    const { db } = this.deps;
+    return transaction(db, () => {
+      if (!getCard(db, id)) throw new NotFoundError('Card not found');
+      if (!deletePurchaseOf(db, 'card', id)) throw new ValidationError('Card is not marked as bought');
+      return getCard(db, id)!;
+    });
   }
 
   /** Fast bulk edits, DB only, in one transaction. */

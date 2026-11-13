@@ -16,6 +16,8 @@ function setup() {
     preview: vi.fn(async () => ({ priceCents: 1000, listing: null, presets: [], blueprintCount: 1 })),
     bulk: vi.fn(() => ({ updated: [1], skipped: [] })),
     history: vi.fn((_id: number) => ({ thresholdCents: 4000, configVersion: 1, points: [] })),
+    purchase: vi.fn((id: number, input: object) => ({ id, purchase: input })),
+    unpurchase: vi.fn((id: number) => ({ id, purchase: null })),
   };
   const importer = {
     resolve: vi.fn(async () => ({
@@ -55,6 +57,8 @@ function setup() {
     delete: vi.fn(),
     preview: vi.fn(async () => ({ priceCents: 19000, listing: null, presets: [], blueprintCount: 1 })),
     history: vi.fn((_id: number) => ({ thresholdCents: 20000, configVersion: 1, points: [] })),
+    purchase: vi.fn((id: number, input: object) => ({ id, purchase: input })),
+    unpurchase: vi.fn((id: number) => ({ id, purchase: null })),
   };
   const sealedCatalog = {
     listExpansions: vi.fn(async () => [{ id: 3627, code: 'mh3', name: 'Modern Horizons 3' }]),
@@ -360,5 +364,27 @@ describe('history API', () => {
     expect((await app.inject({ method: 'GET', url: '/api/cards/9/history' })).statusCode).toBe(404);
     expect((await app.inject({ method: 'GET', url: '/api/sealed/9/history' })).statusCode).toBe(404);
     expect((await app.inject({ method: 'GET', url: '/api/cards/abc/history' })).statusCode).toBe(400);
+  });
+});
+
+describe('purchases API', () => {
+  it('PUT /api/cards/:id/purchase validates and forwards the price paid', async () => {
+    const { app, cards } = setup();
+    const res = await app.inject({ method: 'PUT', url: '/api/cards/4/purchase', payload: { pricePaidCents: 1250 } });
+    expect(res.statusCode).toBe(200);
+    expect(cards.purchase).toHaveBeenCalledWith(4, { pricePaidCents: 1250 });
+    expect((await app.inject({ method: 'PUT', url: '/api/cards/4/purchase', payload: { pricePaidCents: 0 } })).statusCode).toBe(400);
+  });
+
+  it('sealed purchases, undo and GET /api/purchases', async () => {
+    const { app, cards, sealed } = setup();
+    expect((await app.inject({ method: 'DELETE', url: '/api/cards/4/purchase' })).statusCode).toBe(200);
+    expect(cards.unpurchase).toHaveBeenCalledWith(4);
+    await app.inject({ method: 'PUT', url: '/api/sealed/2/purchase', payload: { pricePaidCents: 9900 } });
+    expect(sealed.purchase).toHaveBeenCalledWith(2, { pricePaidCents: 9900 });
+    await app.inject({ method: 'DELETE', url: '/api/sealed/2/purchase' });
+    expect(sealed.unpurchase).toHaveBeenCalledWith(2);
+    const res = await app.inject({ method: 'GET', url: '/api/purchases' });
+    expect(res.json()).toEqual({ totalSavedCents: 0, totalPaidCents: 0, items: [] });
   });
 });
