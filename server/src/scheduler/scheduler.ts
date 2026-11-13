@@ -5,7 +5,12 @@ import { getSettings } from '../db/settings-repo';
 import type { SyncService } from '../sync/sync-service';
 import { nextRunAt } from './schedule';
 
-const MAX_TIMEOUT_MS = 2 ** 31 - 1;
+/**
+ * Maximum wait of a single timer. Timers run on the monotonic clock, which
+ * stops while the machine sleeps: waking up often and comparing against the
+ * wall clock makes a run missed during sleep start shortly after resume.
+ */
+const DEFAULT_CHECK_INTERVAL_MS = 60_000;
 
 export interface SchedulerDeps {
   db: Db;
@@ -13,6 +18,8 @@ export interface SchedulerDeps {
   now?: () => Date;
   /** Delay before the catch-up run at startup. */
   catchupDelayMs?: number;
+  /** Maximum wait between two checks of the wall clock. */
+  checkIntervalMs?: number;
 }
 
 export class Scheduler {
@@ -68,7 +75,19 @@ export class Scheduler {
       delay = isStartup ? (this.deps.catchupDelayMs ?? 30_000) : 0;
     }
     this.nextAt = new Date(now.getTime() + delay);
-    this.timer = setTimeout(() => this.fire(trigger), Math.min(delay, MAX_TIMEOUT_MS));
+    this.arm(trigger);
+  }
+
+  /** Waits for `nextAt` in short steps, re-checking the wall clock each time. */
+  private arm(trigger: SyncTrigger): void {
+    if (!this.nextAt) return;
+    const remaining = Math.max(0, this.nextAt.getTime() - this.now().getTime());
+    const step = Math.min(remaining, this.deps.checkIntervalMs ?? DEFAULT_CHECK_INTERVAL_MS);
+    this.timer = setTimeout(() => {
+      this.timer = null;
+      if (this.nextAt && this.now().getTime() >= this.nextAt.getTime()) this.fire(trigger);
+      else this.arm(trigger);
+    }, step);
   }
 
   private fire(trigger: SyncTrigger): void {
