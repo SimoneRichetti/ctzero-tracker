@@ -1,6 +1,9 @@
 /** Maximum number of distinct cards accepted by a single import. */
 export const MAX_IMPORT_CARDS = 250;
 
+/** Highest "copies needed" accepted (see quantityNeededSchema). */
+const MAX_QUANTITY = 999;
+
 export interface DecklistLine {
   name: string;
   /** Lowercase set code written in the list, if any. */
@@ -11,6 +14,8 @@ export interface DecklistLine {
    */
   setGuessed: boolean;
   foil: boolean;
+  /** Copies written in the list (summed over duplicates); null if no line gives a quantity. */
+  quantity: number | null;
   /** 1-based line of the first occurrence. */
   lineNo: number;
 }
@@ -35,7 +40,7 @@ const SET_SHAPE = /^[A-Za-z0-9]{2,6}$/;
 const PAREN_SET = /\([A-Za-z0-9]{2,6}\)/;
 const FOIL = /\s+\*[FE]\*$/i;
 // [quantity[x]] name [(SET) or [SET] [collector number]]
-const CARD = /^(?:\d+\s*x?\s+)?(.+?)(?:\s+(?:\(([A-Za-z0-9]{2,6})\)|\[([A-Za-z0-9]{2,6})\])(?:\s+\S+)?)?$/;
+const CARD = /^(?:(\d+)\s*x?\s+)?(.+?)(?:\s+(?:\(([A-Za-z0-9]{2,6})\)|\[([A-Za-z0-9]{2,6})\])(?:\s+\S+)?)?$/;
 
 /**
  * Removes the bracketed groups at the end of the line. Without a (SET) on the line, the first one
@@ -53,7 +58,7 @@ function stripTags(line: string): { line: string; bracketSet: string | null } {
 
 /**
  * Parses a text decklist (Moxfield, Archidekt, MTGA, plain names), one card per line.
- * Quantities and collector numbers are ignored; duplicates are merged.
+ * Collector numbers are ignored; duplicates are merged, adding up their quantities.
  */
 export function parseDecklist(text: string): ParsedDecklist {
   const lines: DecklistLine[] = [];
@@ -73,7 +78,9 @@ export function parseDecklist(text: string): ParsedDecklist {
     const foil = FOIL.test(line);
     if (foil) line = line.replace(FOIL, '');
     const match = CARD.exec(line);
-    const name = match?.[1]?.trim() ?? '';
+    const name = match?.[2]?.trim() ?? '';
+    const written = match?.[1] ? Number(match[1]) : null;
+    const quantity = written !== null && written > 0 ? Math.min(written, MAX_QUANTITY) : null;
     if (!/\p{L}/u.test(name)) {
       errors.push({ lineNo, text: raw.trim() });
       return;
@@ -83,11 +90,14 @@ export function parseDecklist(text: string): ParsedDecklist {
     const existing = byName.get(key);
     if (existing) {
       existing.foil ||= foil;
+      if (existing.quantity !== null || quantity !== null) {
+        existing.quantity = Math.min((existing.quantity ?? 1) + (quantity ?? 1), MAX_QUANTITY);
+      }
       return;
     }
-    const parenSet = match?.[2] ?? null;
-    const setCode = parenSet ?? match?.[3] ?? stripped.bracketSet;
-    const entry: DecklistLine = { name, setCode: setCode?.toLowerCase() ?? null, setGuessed: !parenSet && setCode !== null, foil, lineNo };
+    const parenSet = match?.[3] ?? null;
+    const setCode = parenSet ?? match?.[4] ?? stripped.bracketSet;
+    const entry: DecklistLine = { name, setCode: setCode?.toLowerCase() ?? null, setGuessed: !parenSet && setCode !== null, foil, quantity, lineNo };
     byName.set(key, entry);
     lines.push(entry);
   });

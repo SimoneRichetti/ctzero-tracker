@@ -40,6 +40,7 @@ const finish = finishModel(foil);
 const preview = ref<PreviewResult | null>(null);
 const groupId = ref<number | null>(null);
 const thresholdEuro = ref<number | null>(null);
+const quantityNeeded = ref<number | null>(null);
 const error = ref<string | null>(null);
 const loadingLookup = ref(false);
 const loadingPreview = ref(false);
@@ -77,6 +78,7 @@ function reset() {
   minCondition.value = 'Near Mint';
   foil.value = null;
   thresholdEuro.value = null;
+  quantityNeeded.value = null;
   preview.value = null;
   groupId.value = props.defaultGroupId;
 }
@@ -138,6 +140,7 @@ async function save() {
     ...filters(),
     thresholdCents: euroToCents(thresholdEuro.value),
     groupId: groupId.value,
+    quantityNeeded: quantityNeeded.value,
   };
   try {
     const saved = await api.post<TrackedCard>('/api/cards', { name: name.value, ...payload });
@@ -269,6 +272,10 @@ async function save() {
           locale="en-US"
           :min="MIN_THRESHOLD_CENTS / 100"
         />
+      </div>
+      <div class="field">
+        <label for="needed">Copies needed <span class="muted">· optional</span></label>
+        <InputNumber v-model="quantityNeeded" input-id="needed" :min="1" :max="999" placeholder="Not set" />
       </div>
     </div>
 

@@ -38,6 +38,7 @@ const link = ref('');
 const languages = ref<Language[]>([]);
 const preview = ref<PreviewResult | null>(null);
 const thresholdEuro = ref<number | null>(null);
+const quantityNeeded = ref<number | null>(null);
 const error = ref<string | null>(null);
 const loadingProducts = ref(false);
 const resolving = ref(false);
@@ -100,6 +101,7 @@ async function reset() {
   preview.value = null;
   languages.value = [];
   thresholdEuro.value = null;
+  quantityNeeded.value = null;
   expansionId.value = null;
   product.value = null;
   if (expansions.value.length === 0) {
@@ -149,7 +151,11 @@ async function save() {
   if (!canSave.value || !product.value || thresholdEuro.value === null) return;
   saving.value = true;
   error.value = null;
-  const payload = { languages: languages.value, thresholdCents: euroToCents(thresholdEuro.value) };
+  const payload = {
+    languages: languages.value,
+    thresholdCents: euroToCents(thresholdEuro.value),
+    quantityNeeded: quantityNeeded.value,
+  };
   try {
     const saved = await api.post<TrackedSealed>('/api/sealed', {
       blueprintId: product.value.blueprintId,
@@ -295,6 +301,10 @@ async function save() {
           locale="en-US"
           :min="MIN_THRESHOLD_CENTS / 100"
         />
+      </div>
+      <div class="field">
+        <label for="needed">Copies needed <span class="muted">· optional</span></label>
+        <InputNumber v-model="quantityNeeded" input-id="needed" :min="1" :max="999" placeholder="Not set" />
       </div>
     </div>
 
