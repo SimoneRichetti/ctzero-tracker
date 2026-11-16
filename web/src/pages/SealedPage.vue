@@ -1,17 +1,18 @@
 <script setup lang="ts">
-import { formatEuro, type BulkResult, type TrackedCard, type TrackedSealed, type TrackedSealedRow } from '@ctzero/shared';
+import { type BulkResult, type PurchaseResult, type TrackedCard, type TrackedSealed, type TrackedSealedRow } from '@ctzero/shared';
 import Button from 'primevue/button';
 import { useConfirm } from 'primevue/useconfirm';
 import { useToast } from 'primevue/usetoast';
 import { computed, ref, watch } from 'vue';
 import { useCatalog } from '../catalog';
-import { purchaseTotals } from '../group-summary';
 import BulkBar from '../components/BulkBar.vue';
 import BulkThresholdDialog from '../components/BulkThresholdDialog.vue';
 import ItemDrawer from '../components/ItemDrawer.vue';
 import SealedDialog from '../components/SealedDialog.vue';
 import TrackedList from '../components/TrackedList.vue';
 import { useOpenItem } from '../open-item';
+import { purchaseTotals, purchasesOfView } from '../purchase-summary';
+import { purchaseToast } from '../purchase-toast';
 import { BulkStoppedError } from '../bulk-cards';
 import { bulkSealed } from '../sealed-bulk';
 
@@ -33,20 +34,15 @@ function onDeleted(item: TrackedSealedRow) {
   void reloadSealed();
 }
 
-function onPurchased(item: TrackedCard | TrackedSealed, bought: boolean) {
-  const saved = item.purchase?.savedCents;
-  toast.add({
-    severity: 'success',
-    summary: bought ? `${item.name} marked as bought` : `${item.name} is tracked again`,
-    detail: bought && saved != null && saved > 0 ? `You saved ${formatEuro(saved)}` : undefined,
-    life: 4000,
-  });
+function onPurchased(result: PurchaseResult<TrackedCard | TrackedSealed>, keptTracking: boolean) {
+  toast.add(purchaseToast(result.purchase, keptTracking));
+  if (!keptTracking) closeItem();
   void reloadSealed();
   void reloadPurchases();
 }
 
-// Also counts products bought and then removed, which are no longer in the list.
-const savings = computed(() => (purchases.value ? purchaseTotals(purchases.value.items, 'sealed') : undefined));
+// Also counts products bought and then moved to the archive.
+const savings = computed(() => (purchases.value ? purchaseTotals(purchasesOfView(purchases.value.items, 'sealed')) : undefined));
 
 // ---------- add ----------
 const addVisible = ref(false);

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { formatEuro, type BulkResult, type TrackedCard, type TrackedCardRow, type TrackedSealed } from '@ctzero/shared';
+import { type BulkResult, type PurchaseResult, type TrackedCard, type TrackedCardRow, type TrackedSealed } from '@ctzero/shared';
 import Button from 'primevue/button';
 import InputText from 'primevue/inputtext';
 import Menu from 'primevue/menu';
@@ -17,8 +17,10 @@ import BulkThresholdDialog from '../components/BulkThresholdDialog.vue';
 import CardDialog from '../components/CardDialog.vue';
 import ItemDrawer from '../components/ItemDrawer.vue';
 import TrackedList from '../components/TrackedList.vue';
-import { filterByGroup, parseGroupFilter, purchaseTotals } from '../group-summary';
+import { filterByGroup, parseGroupFilter } from '../group-summary';
 import { useOpenItem } from '../open-item';
+import { purchaseTotals, purchasesOfView } from '../purchase-summary';
+import { purchaseToast } from '../purchase-toast';
 
 /** 'all', 'none' (ungrouped) or a group id from `/groups/:id`. */
 const props = defineProps<{ scope: string }>();
@@ -26,7 +28,8 @@ const props = defineProps<{ scope: string }>();
 const toast = useToast();
 const confirm = useConfirm();
 const router = useRouter();
-const { cards, groups, groupNames, purchases, loading, loaded, reloadCardsAndGroups, reloadGroups, reloadPurchases } = useCatalog();
+const { cards, groups, groupNames, purchases, loading, loaded, reloadCards, reloadCardsAndGroups, reloadGroups, reloadPurchases } =
+  useCatalog();
 
 const groupFilter = computed(() =>
   parseGroupFilter(
@@ -72,21 +75,17 @@ function onDeleted(card: TrackedCardRow) {
   void reloadCardsAndGroups();
 }
 
-function onPurchased(card: TrackedCard | TrackedSealed, bought: boolean) {
-  const saved = card.purchase?.savedCents;
-  toast.add({
-    severity: 'success',
-    summary: bought ? `${card.name} marked as bought` : `${card.name} is tracked again`,
-    detail: bought && saved != null && saved > 0 ? `You saved ${formatEuro(saved)}` : undefined,
-    life: 4000,
-  });
-  void reloadCardsAndGroups();
+function onPurchased(result: PurchaseResult<TrackedCard | TrackedSealed>, keptTracking: boolean) {
+  toast.add(purchaseToast(result.purchase, keptTracking));
+  if (!keptTracking) closeItem();
+  // Group counts change only when the card leaves the list.
+  void (keptTracking ? reloadCards() : reloadCardsAndGroups());
   void reloadPurchases();
 }
 
-// The "All cards" total also counts cards bought and then removed, which are no longer in the list.
+// Also counts items bought and then moved to the archive. The home counts everything the tool saved.
 const savings = computed(() =>
-  groupFilter.value === 'all' && purchases.value ? purchaseTotals(purchases.value.items, 'card') : undefined,
+  purchases.value ? purchaseTotals(purchasesOfView(purchases.value.items, 'card', groupFilter.value, group.value?.name ?? null)) : undefined,
 );
 
 // ---------- add ----------
@@ -266,6 +265,7 @@ function confirmBulkDelete() {
       :open-id="openId"
       :empty-text="emptyText"
       :savings="savings"
+      :savings-label="groupFilter === 'all' ? 'Saved with CT Zero' : 'Saved in this view'"
       @open="openCard"
     />
 

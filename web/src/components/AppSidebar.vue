@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import type { CardGroup } from '@ctzero/shared';
+import { formatEuro, type CardGroup } from '@ctzero/shared';
 import Button from 'primevue/button';
 import InputText from 'primevue/inputtext';
 import { useToast } from 'primevue/usetoast';
@@ -7,13 +7,16 @@ import { computed, nextTick, ref } from 'vue';
 import { RouterLink, useRouter } from 'vue-router';
 import { api } from '../api';
 import { useCatalog } from '../catalog';
+import { purchaseTotals } from '../purchase-summary';
 import { useTheme } from '../theme';
 import SyncStatus from './SyncStatus.vue';
 
 const emit = defineEmits<{ navigate: [] }>();
 const toast = useToast();
 const router = useRouter();
-const { groups, navCounts, reloadGroups } = useCatalog();
+const { groups, navCounts, purchases, reloadGroups } = useCatalog();
+/** What the tool saved so far, every purchase included; null until loaded. */
+const savedTotal = computed(() => (purchases.value ? purchaseTotals(purchases.value.items).savedCents : null));
 const { isDark, toggle } = useTheme();
 
 const cardEntries = computed(() => [
@@ -130,6 +133,15 @@ async function create() {
           <span class="count mono">{{ navCounts.sealed.count }}</span>
         </RouterLink>
       </nav>
+
+      <nav aria-label="Archive" class="section">
+        <div class="section-title">Archive</div>
+        <RouterLink to="/purchases" class="nav-item" @click="emit('navigate')">
+          <i class="pi pi-shopping-cart" aria-hidden="true"></i>
+          <span class="label">Purchases</span>
+          <span v-if="savedTotal !== null" class="count mono saved" :aria-label="`${formatEuro(savedTotal)} saved`">{{ formatEuro(savedTotal) }}</span>
+        </RouterLink>
+      </nav>
     </div>
 
     <nav aria-label="Tools" class="section tools">
@@ -146,6 +158,9 @@ async function create() {
 </template>
 
 <style scoped>
+.count.saved {
+  color: var(--ct-accent-text);
+}
 .sidebar {
   height: 100%;
   box-sizing: border-box;

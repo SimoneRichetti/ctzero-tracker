@@ -1,4 +1,4 @@
-import { CONDITION_ABBR, formatEuro, type Condition, type Listing, type TrackedCard, type TrackedSealed } from '@ctzero/shared';
+import { CONDITION_ABBR, formatEuro, type Condition, type Listing, type PurchaseRecord, type TrackedCard, type TrackedSealed } from '@ctzero/shared';
 import type { PricedItem } from './card-status';
 
 function languageList(codes: string[]): string {
@@ -64,6 +64,14 @@ export function savingText(savedCents: number | null): string | null {
   if (savedCents === null) return null;
   if (savedCents === 0) return 'Saved nothing';
   return savedCents > 0 ? `Saved ${formatEuro(savedCents)}` : `Paid ${formatEuro(-savedCents)} more`;
+}
+
+/** The rules a purchase was made with, as one line (group first for cards); '' when not recorded. */
+export function purchaseMetaLine(p: Pick<PurchaseRecord, 'rules' | 'groupName'>): string {
+  const r = p.rules;
+  if (!r) return '';
+  const line = r.kind === 'card' ? cardMetaLine(r) : sealedMetaLine(r);
+  return p.groupName ? `${p.groupName} · ${line}` : line;
 }
 
 export type ChangeTone = 'down' | 'up' | 'flat' | 'none';

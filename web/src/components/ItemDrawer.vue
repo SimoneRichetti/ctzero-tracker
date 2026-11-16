@@ -11,6 +11,7 @@ import {
   type CardLookupDto,
   type Condition,
   type Language,
+  type PurchaseResult,
   type TrackedCard,
   type TrackedCardRow,
   type TrackedSealed,
@@ -26,11 +27,13 @@ import { useConfirm } from 'primevue/useconfirm';
 import { computed, ref, watch } from 'vue';
 import { onBeforeRouteLeave, onBeforeRouteUpdate } from 'vue-router';
 import { api } from '../api';
+import { useCatalog } from '../catalog';
 import { FINISH_OPTIONS, fromFinish, toFinish } from '../finish-choice';
 import { cardStatus } from '../card-status';
 import { latestRequest } from '../latest-request';
+import { copiesProgress, suggestStopTracking } from '../purchase-summary';
 import { cardTraderUrl as cardTraderLink, gapSentence, largeImageUrl, listingLine, savingText, sinceStart, targetGap } from '../row-format';
-import { dayLabel, formatWhen } from '../time-format';
+import { dayInText, formatWhen } from '../time-format';
 import PriceHistoryChart from './PriceHistoryChart.vue';
 import StatusPill from './StatusPill.vue';
 
@@ -42,8 +45,8 @@ const emit = defineEmits<{
   close: [];
   saved: [item: TrackedCard | TrackedSealed];
   deleted: [item: Row];
-  /** `bought` false = the purchase was undone. */
-  purchased: [item: TrackedCard | TrackedSealed, bought: boolean];
+  /** `keptTracking` false = the item was moved to the archive (`result.item` is null). */
+  purchased: [result: PurchaseResult<TrackedCard | TrackedSealed>, keptTracking: boolean];
 }>();
 const confirm = useConfirm();
 
@@ -57,9 +60,15 @@ interface Form {
   minCondition: Condition;
   foil: boolean | null;
   groupId: number | null;
+  quantityNeeded: number | null;
 }
 
 const form = ref<Form>(emptyForm());
+const paidEuro = ref<number | null>(null);
+const buyQuantity = ref(1);
+/** The action being sent: true = keep tracking, false = stop; null = none. */
+const purchasing = ref<boolean | null>(null);
+const { purchases } = useCatalog();
 const baseline = ref('');
 const lookup = ref<CardLookupDto | null>(null);
 const error = ref<string | null>(null);
@@ -70,7 +79,7 @@ const card = computed(() => (props.kind === 'card' && props.item ? (props.item a
 const sealed = computed(() => (props.kind === 'sealed' && props.item ? (props.item as TrackedSealedRow) : null));
 
 function emptyForm(): Form {
-  return { targetEuro: null, languages: [], expansionIds: [], minCondition: 'Near Mint', foil: null, groupId: null };
+  return { targetEuro: null, languages: [], expansionIds: [], minCondition: 'Near Mint', foil: null, groupId: null, quantityNeeded: null };
 }
 
 function formOf(item: Row): Form {
@@ -82,6 +91,7 @@ function formOf(item: Row): Form {
     minCondition: c?.minCondition ?? 'Near Mint',
     foil: c ? c.foil : null,
     groupId: c?.groupId ?? null,
+    quantityNeeded: item.quantityNeeded,
   };
 }
 
@@ -108,8 +118,10 @@ watch(
       resetFrom(item);
       resetPaid(item);
       void loadPrintings(item);
-    } else if (!dirty.value) {
-      resetFrom(item);
+    } else {
+      if (!dirty.value) resetFrom(item);
+      // A price found after the panel opened (first update) becomes the default price paid.
+      if (paidEuro.value === null) resetPaid(item);
     }
   },
   { immediate: true },
@@ -222,8 +234,9 @@ async function save() {
             foil: f.foil,
             thresholdCents,
             groupId: f.groupId,
+            quantityNeeded: f.quantityNeeded,
           })
-        : await api.put<TrackedSealed>(`/api/sealed/${item.id}`, { languages: f.languages, thresholdCents });
+        : await api.put<TrackedSealed>(`/api/sealed/${item.id}`, { languages: f.languages, thresholdCents, quantityNeeded: f.quantityNeeded });
     // Saved values become the new baseline; the page reloads the list for the rest (trend, statuses).
     resetFrom({ ...item, ...saved } as Row);
     emit('saved', saved);
@@ -234,14 +247,13 @@ async function save() {
   }
 }
 
-// ---------- start price and purchase ----------
-const paidEuro = ref<number | null>(null);
-const purchasing = ref(false);
 
+// ---------- start price and purchase ----------
 /** The price paid defaults to the current price, which is what the user most likely paid. */
 function resetPaid(item: Row | TrackedCard | TrackedSealed) {
   const cents = item.lastPriceCents ?? item.startPriceCents;
   paidEuro.value = cents === null ? null : cents / 100;
+  buyQuantity.value = 1;
 }
 
 const noun = computed(() => (props.kind === 'card' ? 'card' : 'product'));
@@ -249,42 +261,67 @@ const noun = computed(() => (props.kind === 'card' ? 'card' : 'product'));
 const start = computed(() => {
   const c = props.item;
   if (!c || c.startPriceCents === null) return null;
-  const since = c.startPriceAt ? dayLabel(c.startPriceAt, new Date()) : null;
-  const sinceText = since ? `since ${since === 'Today' || since === 'Yesterday' ? since.toLowerCase() : since}` : null;
-  return { cents: c.startPriceCents, sub: [sinceText, sinceStart(c)].filter(Boolean).join(' · ') };
+  const since = c.startPriceAt ? `since ${dayInText(c.startPriceAt, new Date())}` : null;
+  return { cents: c.startPriceCents, sub: [since, sinceStart(c)].filter(Boolean).join(' · ') };
 });
 
-/** What marking the item as bought at `paidEuro` would save. */
+const quantity = computed(() => Math.max(1, buyQuantity.value || 1));
+
+/** What buying `quantity` copies at `paidEuro` each would save. */
 const savingPreview = computed(() => {
   const c = props.item;
   if (!c || paidEuro.value === null || c.startPriceCents === null) return null;
-  return savingText(c.startPriceCents - euroToCents(paidEuro.value));
+  const copies = quantity.value > 1 ? ` × ${quantity.value}` : '';
+  const text = savingText((c.startPriceCents - euroToCents(paidEuro.value)) * quantity.value);
+  return `${text} on the start price of ${formatEuro(c.startPriceCents)}${copies}`;
 });
 
-const purchaseDay = computed(() => {
-  const p = props.item?.purchase;
-  if (!p) return '';
-  const day = dayLabel(p.purchasedAt, new Date());
-  return day === 'Today' || day === 'Yesterday' ? day.toLowerCase() : `on ${day}`;
-});
-
-async function setPurchase(bought: boolean) {
+const progress = computed(() => (props.item ? copiesProgress(props.item) : null));
+/** Share of the copies needed that this purchase adds, for the progress bar. */
+const addingPct = computed(() => {
   const c = props.item;
-  if (!c || purchasing.value) return;
-  if (bought && (paidEuro.value === null || euroToCents(paidEuro.value) < 1)) return;
-  purchasing.value = true;
+  if (!c?.quantityNeeded || !progress.value) return 0;
+  return Math.max(0, Math.min(100 - progress.value.pct, Math.round((quantity.value / c.quantityNeeded) * 100)));
+});
+const stopByDefault = computed(() => (props.item ? suggestStopTracking(props.item, quantity.value) : true));
+const completes = computed(() => {
+  const c = props.item;
+  return !!c && c.quantityNeeded !== null && c.boughtQuantity < c.quantityNeeded && stopByDefault.value;
+});
+/** Both actions, the suggested one first and highlighted. */
+const buyActions = computed(() => {
+  const stop = { keep: false, label: 'Bought · stop tracking' };
+  const keep = { keep: true, label: 'Bought · keep tracking' };
+  return stopByDefault.value
+    ? [{ ...stop, primary: true }, { ...keep, primary: false }]
+    : [{ ...keep, primary: true }, { ...stop, primary: false }];
+});
+const canBuy = computed(() => paidEuro.value !== null && euroToCents(paidEuro.value) >= 1 && purchasing.value === null);
+
+/** Purchases made while tracking this item, newest first. */
+const itemPurchases = computed(() => {
+  const c = props.item;
+  return c && purchases.value ? purchases.value.items.filter((p) => p.kind === props.kind && p.itemId === c.id) : [];
+});
+
+async function buy(keepTracking: boolean) {
+  const c = props.item;
+  if (!c || !canBuy.value) return;
+  purchasing.value = keepTracking;
   error.value = null;
   try {
-    const path = `/api/${props.kind === 'card' ? 'cards' : 'sealed'}/${c.id}/purchase`;
-    const updated = bought
-      ? await api.put<TrackedCard | TrackedSealed>(path, { pricePaidCents: euroToCents(paidEuro.value!) })
-      : await api.del<TrackedCard | TrackedSealed>(path);
-    if (!bought) resetPaid(updated);
-    emit('purchased', updated, bought);
+    const result = await api.post<PurchaseResult<TrackedCard | TrackedSealed>>(
+      `/api/${props.kind === 'card' ? 'cards' : 'sealed'}/${c.id}/purchases`,
+      { pricePaidCents: euroToCents(paidEuro.value!), quantity: quantity.value, keepTracking },
+    );
+    // The panel closes when the item leaves the list: unsaved edits of a removed item are moot.
+    if (!keepTracking) baseline.value = JSON.stringify(form.value);
+    buyQuantity.value = 1;
+    emit('purchased', result, keepTracking);
   } catch (e) {
     error.value = (e as Error).message;
   } finally {
-    purchasing.value = false;
+    purchasing.value = null;
   }
 }
 
@@ -358,30 +395,14 @@ function remove() {
           <PriceHistoryChart :kind="kind" :id="item.id" :refresh-key="refreshKey" />
         </div>
 
-        <div class="section purchase">
-          <template v-if="item.purchase">
-            <div class="section-head">
-              <div class="section-title">
-                <i class="pi pi-check-circle" aria-hidden="true"></i>
-                Bought {{ purchaseDay }} for <span class="mono">{{ formatEuro(item.purchase.pricePaidCents) }}</span>
-              </div>
-              <Button label="Undo" size="small" text severity="secondary" :loading="purchasing" @click="setPurchase(false)" />
-            </div>
-            <div class="purchase-line" :class="{ under: (item.purchase.savedCents ?? 0) > 0 }">
-              <template v-if="item.purchase.savedCents !== null">
-                {{ savingText(item.purchase.savedCents) }} on the start price of
-                <span class="mono">{{ formatEuro(item.purchase.startPriceCents!) }}</span>
-              </template>
-              <template v-else>No start price was recorded, so this purchase adds nothing to the savings.</template>
-            </div>
-            <div class="hint">Updates and alerts are paused for this {{ noun }}.</div>
-          </template>
-          <template v-else>
-            <div class="section-head">
-              <label for="drawer-paid" class="section-title">Bought it?</label>
-              <div class="hint">stops updates and alerts</div>
-            </div>
-            <div class="purchase-form">
+        <section class="section purchase" aria-labelledby="drawer-buy-title">
+          <div class="section-head">
+            <h3 id="drawer-buy-title" class="section-title">Bought some?</h3>
+            <RouterLink to="/purchases" class="hint">recorded in Purchases</RouterLink>
+          </div>
+          <div class="purchase-form">
+            <div class="field">
+              <label for="drawer-paid" class="field-label">Paid each</label>
               <InputNumber
                 v-model="paidEuro"
                 input-id="drawer-paid"
@@ -392,19 +413,69 @@ function remove() {
                 placeholder="Price paid"
                 class="target-input"
               />
-              <Button
-                label="Mark as bought"
-                icon="pi pi-shopping-cart"
-                severity="secondary"
-                outlined
-                :disabled="paidEuro === null || paidEuro <= 0"
-                :loading="purchasing"
-                @click="setPurchase(true)"
+            </div>
+            <div class="field">
+              <label for="drawer-qty" class="field-label">Copies</label>
+              <InputNumber
+                v-model="buyQuantity"
+                input-id="drawer-qty"
+                show-buttons
+                button-layout="horizontal"
+                :min="1"
+                :max="999"
+                :allow-empty="false"
+                increment-button-icon="pi pi-plus"
+                decrement-button-icon="pi pi-minus"
+                class="qty-input"
               />
             </div>
-            <div v-if="savingPreview" class="purchase-line">{{ savingPreview }} on the start price</div>
-          </template>
-        </div>
+          </div>
+          <div v-if="savingPreview" class="purchase-line">{{ savingPreview }}</div>
+
+          <div v-if="progress" class="progress">
+            <div class="progress-head">
+              <span>{{ item.boughtQuantity }} of {{ item.quantityNeeded }} copies bought</span>
+              <span class="mono hint">after this: {{ item.boughtQuantity + quantity }}/{{ item.quantityNeeded }}</span>
+            </div>
+            <div class="progress-bar" aria-hidden="true">
+              <span :style="{ width: `${progress.pct}%` }"></span>
+              <span class="adding" :style="{ width: `${addingPct}%` }"></span>
+            </div>
+          </div>
+          <div v-if="completes" class="complete-note">
+            With these you have all {{ item.quantityNeeded }} copies: stopping the tracking is suggested.
+          </div>
+
+          <div class="purchase-actions">
+            <Button
+              v-for="a in buyActions"
+              :key="String(a.keep)"
+              :label="a.label"
+              :severity="a.primary ? undefined : 'secondary'"
+              :outlined="!a.primary"
+              :loading="purchasing === a.keep"
+              :disabled="!canBuy"
+              @click="buy(a.keep)"
+            />
+          </div>
+          <div class="hint">Stop tracking moves the {{ noun }} to Purchases with its history; keep tracking if you need more copies.</div>
+
+          <div v-if="itemPurchases.length > 0" class="item-purchases">
+            <div class="field-label">Purchases of this {{ noun }}</div>
+            <RouterLink
+              v-for="p in itemPurchases"
+              :key="p.id"
+              :to="{ path: '/purchases', query: { item: String(p.id) } }"
+              class="item-purchase"
+            >
+              <span>
+                {{ p.quantity }} cop{{ p.quantity === 1 ? 'y' : 'ies' }} · <span class="mono">{{ formatEuro(p.pricePaidCents) }}</span> each ·
+                {{ dayInText(p.purchasedAt, new Date()) }}
+              </span>
+              <span :class="{ under: (p.savedCents ?? 0) > 0 }">{{ savingText(p.savedCents) ?? 'No start price' }} →</span>
+            </RouterLink>
+          </div>
+        </section>
 
         <div class="section">
           <label for="drawer-target" class="section-title">Alert me at or under</label>
@@ -436,8 +507,23 @@ function remove() {
 
         <div class="section">
           <div class="section-head">
+            <label for="drawer-needed" class="section-title">Copies needed</label>
+            <div class="hint">shows how many you bought, e.g. 1/4</div>
+          </div>
+          <InputNumber
+            v-model="form.quantityNeeded"
+            input-id="drawer-needed"
+            :min="1"
+            :max="999"
+            placeholder="Not set"
+            class="target-input"
+          />
+        </div>
+
+        <div class="section">
+          <div class="section-head">
             <div class="section-title">Which offers count</div>
-            <div class="hint">changing these re-prices the {{ kind === 'card' ? 'card' : 'product' }}</div>
+            <div class="hint">changing these re-prices the {{ noun }} and resets its start price</div>
           </div>
           <template v-if="kind === 'card'">
             <div class="rule">
@@ -476,7 +562,14 @@ function remove() {
             </div>
             <div class="rule">
               <label for="drawer-foil">Finish</label>
-              <Select v-model="finish" input-id="drawer-foil" :options="FINISH_OPTIONS" option-label="label" option-value="value" class="rule-control" />
+              <Select
+                v-model="finish"
+                input-id="drawer-foil"
+                :options="FINISH_OPTIONS"
+                option-label="label"
+                option-value="value"
+                class="rule-control"
+              />
             </div>
             <div class="rule">
               <label for="drawer-group">Group</label>
@@ -618,25 +711,102 @@ function remove() {
 .figures.three .figure {
   font-size: 22px;
 }
-.purchase .section-title i {
-  margin-right: 4px;
-  color: var(--ct-accent-text);
+.purchase {
+  background: var(--ct-bg);
+}
+.purchase h3.section-title {
+  margin: 0;
+  font-size: inherit;
 }
 .purchase-form {
   display: flex;
   flex-wrap: wrap;
-  align-items: center;
-  gap: 8px;
+  align-items: flex-end;
+  gap: 12px;
+}
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.field-label {
+  font-size: 12.5px;
+  color: var(--ct-muted);
+}
+.qty-input :deep(input) {
+  width: 3.5rem;
+  text-align: center;
+  font-family: var(--ct-mono);
+  font-size: 16px;
 }
 .purchase-line {
-  margin-top: 8px;
-  font-size: 13px;
-}
-.purchase-line.under {
+  margin-top: 10px;
+  font-size: 13.5px;
   color: var(--ct-accent-text);
 }
-.purchase .hint {
-  margin-top: 4px;
+.progress {
+  margin-top: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.progress-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  font-size: 13px;
+}
+.progress-bar {
+  display: flex;
+  height: 6px;
+  border-radius: 3px;
+  background: var(--ct-line);
+  overflow: hidden;
+}
+.progress-bar span {
+  height: 100%;
+  background: var(--ct-accent);
+}
+.progress-bar .adding {
+  opacity: 0.45;
+}
+.complete-note {
+  margin-top: 14px;
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: var(--ct-accent-soft);
+  font-size: 13px;
+}
+.purchase-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin: 14px 0 6px;
+}
+.item-purchases {
+  margin-top: 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.item-purchase {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  min-height: 44px;
+  padding: 0 12px;
+  border: 1px solid var(--ct-line);
+  border-radius: 8px;
+  color: var(--ct-ink);
+  font-size: 13.5px;
+  text-decoration: none;
+}
+.item-purchase:hover {
+  border-color: var(--ct-line-strong);
+}
+.item-purchase .under {
+  color: var(--ct-accent-text);
 }
 .figure-sub {
   font-size: 12.5px;

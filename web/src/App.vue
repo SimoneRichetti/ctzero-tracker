@@ -6,6 +6,7 @@ import Toast from 'primevue/toast';
 import { useToast } from 'primevue/usetoast';
 import { onMounted, ref } from 'vue';
 import { setCatalogErrorHandler, useCatalog } from './catalog';
+import { LINK_TOAST } from './link-toast';
 import AppSidebar from './components/AppSidebar.vue';
 import SyncStatus from './components/SyncStatus.vue';
 import { onRunFinished, startSyncPolling } from './sync-status';
@@ -27,6 +28,17 @@ onMounted(() => {
 
 <template>
   <Toast />
+  <!-- Toasts with a link (see link-toast.ts): `detail` is { text, to, label }. -->
+  <Toast :group="LINK_TOAST">
+    <template #message="{ message }">
+      <i class="pi pi-check-circle link-toast-icon" aria-hidden="true"></i>
+      <div class="link-toast-text">
+        <div class="link-toast-summary">{{ message.summary }}</div>
+        <div v-if="message.detail.text" class="link-toast-detail">{{ message.detail.text }}</div>
+      </div>
+      <RouterLink :to="message.detail.to" class="link-toast-link" @click="toast.removeGroup(LINK_TOAST)">{{ message.detail.label }}</RouterLink>
+    </template>
+  </Toast>
   <ConfirmDialog />
   <div class="shell">
     <AppSidebar class="shell-sidebar" />
@@ -96,6 +108,27 @@ onMounted(() => {
 </style>
 
 <style>
+.link-toast-icon {
+  flex: none;
+  margin-top: 2px;
+  font-size: 1.15rem;
+}
+.link-toast-text {
+  flex: 1;
+  min-width: 0;
+}
+.link-toast-summary {
+  font-weight: 600;
+}
+.link-toast-detail {
+  margin-top: 2px;
+  font-size: 0.875rem;
+}
+.link-toast-link {
+  align-self: center;
+  font-weight: 600;
+  white-space: nowrap;
+}
 .menu-drawer.p-drawer {
   width: 290px;
   background: var(--ct-side);

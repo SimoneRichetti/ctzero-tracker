@@ -1,12 +1,12 @@
 import type { AlertState, Language, Listing, SyncStatus, TrackedSealed } from '@ctzero/shared';
 import { NotFoundError } from '../errors';
-import { groupSnapshots, type Snapshot } from './cards-repo';
-import { transaction, type Db } from './db';
-import { PURCHASE_COLUMNS, purchaseJoin, purchaseOf, type PurchaseColumns } from './purchases-repo';
+import { groupSnapshots, startPriceColumns, type Snapshot } from './cards-repo';
+import type { Db } from './db';
+import { boughtQuantityColumn } from './purchases-repo';
 
 type SqlValue = string | number | null;
 
-interface SealedRecord extends PurchaseColumns {
+interface SealedRecord {
   id: number;
   name: string;
   blueprint_id: number;
@@ -26,6 +26,8 @@ interface SealedRecord extends PurchaseColumns {
   last_notified_price_cents: number | null;
   start_price_cents: number | null;
   start_price_at: string | null;
+  quantity_needed: number | null;
+  bought_quantity: number;
   created_at: string;
   updated_at: string;
 }
@@ -39,9 +41,12 @@ export interface NewSealed {
   imageUrl: string | null;
   languages: Language[];
   thresholdCents: number;
+  quantityNeeded?: number | null;
 }
 
-export type SealedPatch = Partial<Omit<TrackedSealed, 'id' | 'createdAt' | 'updatedAt' | 'purchase'>>;
+export type SealedPatch = Partial<
+  Omit<TrackedSealed, 'id' | 'createdAt' | 'updatedAt' | 'boughtQuantity' | 'startPriceCents' | 'startPriceAt'>
+>;
 
 const COLUMNS: Record<keyof SealedPatch, string> = {
   name: 'name',
@@ -60,12 +65,12 @@ const COLUMNS: Record<keyof SealedPatch, string> = {
   lastError: 'last_error',
   alertState: 'alert_state',
   lastNotifiedPriceCents: 'last_notified_price_cents',
-  startPriceCents: 'start_price_cents',
-  startPriceAt: 'start_price_at',
+  quantityNeeded: 'quantity_needed',
 };
 
-/** Products with their purchase, if any. */
-const SELECT_SEALED = `SELECT t.*, ${PURCHASE_COLUMNS} FROM tracked_sealed t ${purchaseJoin('sealed')}`;
+/** Products with their start price and the copies bought. */
+const SELECT_SEALED = `SELECT t.*, ${startPriceColumns('sealed_price_snapshots', 'tracked_sealed_id')}, ${boughtQuantityColumn('sealed')}
+  FROM tracked_sealed t`;
 
 function encode(key: keyof SealedPatch, value: unknown): SqlValue {
   if (value === null || value === undefined) return null;
@@ -94,7 +99,8 @@ function toSealed(r: SealedRecord): TrackedSealed {
     lastNotifiedPriceCents: r.last_notified_price_cents,
     startPriceCents: r.start_price_cents,
     startPriceAt: r.start_price_at,
-    purchase: purchaseOf(r),
+    quantityNeeded: r.quantity_needed,
+    boughtQuantity: r.bought_quantity,
     createdAt: r.created_at,
     updatedAt: r.updated_at,
   };
@@ -115,8 +121,9 @@ export function insertSealed(db: Db, s: NewSealed, now: Date = new Date()): Trac
   const res = db
     .prepare(
       `INSERT INTO tracked_sealed
-        (name, blueprint_id, expansion_id, expansion_name, category_name, image_url, languages, threshold_cents, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        (name, blueprint_id, expansion_id, expansion_name, category_name, image_url, languages, threshold_cents,
+         quantity_needed, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     )
     .run(
       s.name,
@@ -127,6 +134,7 @@ export function insertSealed(db: Db, s: NewSealed, now: Date = new Date()): Trac
       s.imageUrl,
       JSON.stringify(s.languages),
       s.thresholdCents,
+      s.quantityNeeded ?? null,
       iso,
       iso,
     );
@@ -146,17 +154,10 @@ export function deleteSealed(db: Db, id: number): boolean {
   return Number(db.prepare('DELETE FROM tracked_sealed WHERE id = ?').run(id).changes) > 0;
 }
 
-/** Also records the start price of the product, if this is its first price. */
 export function insertSealedSnapshot(db: Db, s: Snapshot & { sealedId: number }): void {
-  transaction(db, () => {
-    db.prepare(
-      'INSERT INTO sealed_price_snapshots (tracked_sealed_id, config_version, synced_at, price_cents) VALUES (?, ?, ?, ?)',
-    ).run(s.sealedId, s.configVersion, s.syncedAt, s.priceCents);
-    if (s.priceCents === null) return;
-    db.prepare(
-      'UPDATE tracked_sealed SET start_price_cents = ?, start_price_at = ? WHERE id = ? AND start_price_cents IS NULL',
-    ).run(s.priceCents, s.syncedAt, s.sealedId);
-  });
+  db.prepare(
+    'INSERT INTO sealed_price_snapshots (tracked_sealed_id, config_version, synced_at, price_cents) VALUES (?, ?, ?, ?)',
+  ).run(s.sealedId, s.configVersion, s.syncedAt, s.priceCents);
 }
 
 export function listSealedSnapshots(db: Db, sealedId: number): Snapshot[] {

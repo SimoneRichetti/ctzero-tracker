@@ -67,13 +67,8 @@ export class SyncService {
     const { db } = this.deps;
     const running = getRunningRun(db);
     if (running) return { started: false, run: running };
-    // Bought cards are no longer updated nor alerted.
-    const cardIds = listCards(db)
-      .filter((c) => c.purchase === null)
-      .map((c) => c.id);
-    const sealedIds = listSealed(db)
-      .filter((s) => s.purchase === null)
-      .map((s) => s.id);
+    const cardIds = listCards(db).map((c) => c.id);
+    const sealedIds = listSealed(db).map((s) => s.id);
     const run = startRun(db, trigger, cardIds.length + sealedIds.length, this.now());
     this.active = this.execute(run.id, cardIds, sealedIds).finally(() => {
       this.active = null;
@@ -103,7 +98,7 @@ export class SyncService {
 
       for (const id of cardIds) {
         const card = getCard(db, id); // null if deleted during the run
-        if (card && !card.purchase) {
+        if (card) {
           const fatal = await this.runItem(
             'card',
             card.name,
@@ -123,7 +118,7 @@ export class SyncService {
 
       for (const id of sealedIds) {
         const item = getSealed(db, id);
-        if (item && !item.purchase) {
+        if (item) {
           const fatal = await this.runItem(
             'sealed',
             item.name,
@@ -205,8 +200,7 @@ export class SyncService {
     const applied = transaction(db, () => {
       // The card may have been deleted or modified while we were pricing it: in that case
       // the result is based on stale data and must not be written (or notified).
-      const latest = getCard(db, card.id);
-      if (!isUnchanged(latest, card) || latest?.purchase) return false;
+      if (!isUnchanged(getCard(db, card.id), card)) return false;
       insertSnapshot(db, { cardId: card.id, configVersion: card.configVersion, syncedAt: iso, priceCents });
       updateCard(
         db,
@@ -229,8 +223,7 @@ export class SyncService {
     const { next, event } = evaluate(item, result, furtherDropPercent);
     const applied = transaction(db, () => {
       // Same guard as cards: stale results are neither written nor notified.
-      const latest = getSealed(db, item.id);
-      if (!isUnchanged(latest, item) || latest?.purchase) return false;
+      if (!isUnchanged(getSealed(db, item.id), item)) return false;
       insertSealedSnapshot(db, { sealedId: item.id, configVersion: item.configVersion, syncedAt: iso, priceCents });
       updateSealed(
         db,

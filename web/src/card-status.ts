@@ -1,27 +1,22 @@
-import type { Purchase, TrackedCard } from '@ctzero/shared';
+import type { TrackedCard } from '@ctzero/shared';
 
 /** Fields shared by tracked cards and tracked sealed products. */
-export type PricedItem = Pick<TrackedCard, 'name' | 'thresholdCents' | 'lastPriceCents' | 'lastSyncStatus' | 'alertState'> & {
-  purchase?: Purchase | null;
-};
+export type PricedItem = Pick<TrackedCard, 'name' | 'thresholdCents' | 'lastPriceCents' | 'lastSyncStatus' | 'alertState'>;
 
-export type CardStatus = 'below' | 'above' | 'no_offers' | 'error' | 'pending' | 'bought';
+export type CardStatus = 'below' | 'above' | 'no_offers' | 'error' | 'pending';
 
 /** `tone` picks the colours of StatusPill. */
-export const STATUS_META: Record<CardStatus, { label: string; tone: 'accent' | 'neutral' | 'warn' | 'danger' | 'done' }> = {
+export const STATUS_META: Record<CardStatus, { label: string; tone: 'accent' | 'neutral' | 'warn' | 'danger' }> = {
   below: { label: 'Below target', tone: 'accent' },
   above: { label: 'Watching', tone: 'neutral' },
   no_offers: { label: 'No offers', tone: 'warn' },
   error: { label: 'Update failed', tone: 'danger' },
   pending: { label: 'Pending', tone: 'neutral' },
-  bought: { label: 'Bought', tone: 'done' },
 };
 
-const ORDER: Record<CardStatus, number> = { below: 0, above: 1, no_offers: 2, pending: 3, error: 4, bought: 5 };
+const ORDER: Record<CardStatus, number> = { below: 0, above: 1, no_offers: 2, pending: 3, error: 4 };
 
 export function cardStatus(c: PricedItem): CardStatus {
-  // A bought card is no longer updated: its last price and errors no longer matter.
-  if (c.purchase) return 'bought';
   if (c.lastSyncStatus === 'error') return 'error';
   if (c.lastSyncStatus === null) return 'pending';
   if (c.alertState === 'below') return 'below';
