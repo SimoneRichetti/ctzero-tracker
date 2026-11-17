@@ -11,7 +11,7 @@ import { cardNavCounts, countItems } from './nav-summary';
 const cards = ref<TrackedCardRow[]>([]);
 const sealed = ref<TrackedSealedRow[]>([]);
 const groups = ref<CardGroup[]>([]);
-/** Every purchase, also of items no longer tracked: the savings totals. */
+/** The purchases archive, also of items no longer tracked: the savings totals. */
 const purchases = ref<PurchasesDto | null>(null);
 const health = ref<HealthDto | null>(null);
 const loading = reactive({ cards: false, sealed: false, groups: false, purchases: false });

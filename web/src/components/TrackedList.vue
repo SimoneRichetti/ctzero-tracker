@@ -11,6 +11,7 @@ import { computed, ref, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { cardStatus } from '../card-status';
 import { summarize } from '../group-summary';
+import { copiesProgress, type PurchaseTotals } from '../purchase-summary';
 import { SORT_OPTIONS, STATUS_TABS, filterByTab, matchesSearch, parseSort, parseTab, sortItems, tabCounts, type SortKey, type StatusTab } from '../list-filters';
 import { cardMetaLine, cardTraderUrl, formatChange, largeImageUrl, listingLine, sealedMetaLine } from '../row-format';
 import PriceSparkline from './PriceSparkline.vue';
@@ -29,8 +30,10 @@ const props = defineProps<{
   groupNames?: Map<number, string>;
   openId: number | null;
   emptyText: string;
-  /** Savings to show instead of those of `items` (e.g. to also count items no longer tracked). */
-  savings?: { savedCents: number; count: number };
+  /** Purchases counted by this view (also of items no longer tracked); undefined while loading. */
+  savings?: PurchaseTotals;
+  /** Label of the savings figure. */
+  savingsLabel?: string;
 }>();
 const selection = defineModel<R[]>('selection', { required: true });
 const emit = defineEmits<{ open: [id: number] }>();
@@ -70,7 +73,6 @@ const summary = computed(() => summarize(props.items));
 const searched = computed(() => props.items.filter((i) => matchesSearch(i.name, search.value)));
 const counts = computed(() => tabCounts(searched.value));
 const tabOptions = computed(() => STATUS_TABS.map((t) => ({ ...t, count: counts.value[t.value] })));
-const saved = computed(() => props.savings ?? { savedCents: summary.value.savedCents, count: summary.value.bought });
 const rows = computed(() => sortItems(filterByTab(searched.value, tab.value), sort.value));
 
 /** Display values of each visible row, computed once per change instead of on every render. */
@@ -86,6 +88,7 @@ const info = computed(
             group: card && card.groupId !== null ? props.groupNames?.get(card.groupId) : undefined,
             listing: listingLine(props.kind, row.lastListing),
             change: formatChange(row.trend.change7dPct),
+            copies: copiesProgress(row),
             url: cardTraderUrl(row),
           },
         ];
@@ -118,7 +121,6 @@ function showPreview(event: MouseEvent, row: Row) {
     <div class="kpi">
       <div class="kpi-label">Tracked</div>
       <div class="kpi-value mono">{{ summary.count }}</div>
-      <div v-if="summary.bought > 0" class="kpi-sub">+ {{ summary.bought }} bought</div>
     </div>
     <div class="kpi">
       <div class="kpi-label">Below target</div>
@@ -137,11 +139,13 @@ function showPreview(event: MouseEvent, row: Row) {
       <div class="kpi-value mono" :class="{ warn: summary.problems > 0 }">{{ summary.problems }}</div>
       <div class="kpi-sub">no offers or failed update</div>
     </div>
-    <div class="kpi">
-      <div class="kpi-label">Total saved</div>
-      <div class="kpi-value mono" :class="{ accent: saved.savedCents > 0 }">{{ formatEuro(saved.savedCents) }}</div>
-      <div class="kpi-sub">on {{ saved.count }} {{ kind === 'card' ? 'card' : 'product' }}{{ saved.count === 1 ? '' : 's' }} bought</div>
-    </div>
+    <RouterLink to="/purchases" class="kpi saved">
+      <div class="kpi-label">{{ savingsLabel ?? 'Saved' }}</div>
+      <div class="kpi-value mono">{{ savings ? formatEuro(savings.savedCents) : '—' }}</div>
+      <div class="kpi-sub">
+        <template v-if="savings">{{ savings.count }} purchase{{ savings.count === 1 ? '' : 's' }} · {{ savings.copies }} cop{{ savings.copies === 1 ? 'y' : 'ies' }} · </template>See all →
+      </div>
+    </RouterLink>
   </div>
 
   <div class="toolbar">
@@ -183,7 +187,19 @@ function showPreview(event: MouseEvent, row: Row) {
           />
           <div v-else class="thumb placeholder" :class="kind" aria-hidden="true"></div>
           <div class="item-text">
-            <button type="button" class="item-name" @click="emit('open', data.id)">{{ data.name }}</button>
+            <div class="item-title">
+              <button type="button" class="item-name" @click="emit('open', data.id)">{{ data.name }}</button>
+              <span
+                v-if="rowInfo(data).copies"
+                class="copies mono"
+                :class="{ done: rowInfo(data).copies!.done }"
+                :aria-label="`${rowInfo(data).copies!.text} copies bought`"
+                v-tooltip.top="'Copies bought / needed'"
+              >
+                <span class="copies-bar" aria-hidden="true"><span :style="{ width: `${rowInfo(data).copies!.pct}%` }"></span></span>
+                {{ rowInfo(data).copies!.text }}
+              </span>
+            </div>
             <div class="item-meta">
               <span v-if="rowInfo(data).group" class="group-chip"><i class="pi pi-folder" aria-hidden="true"></i>{{ rowInfo(data).group }}</span>
               <span>{{ rowInfo(data).meta }}</span>
@@ -202,8 +218,7 @@ function showPreview(event: MouseEvent, row: Row) {
     <Column header="Target" style="width: 11.5rem">
       <template #body="{ data }">
         <div class="mono">{{ formatEuro(data.thresholdCents) }}</div>
-        <div v-if="data.purchase" class="paid">paid <span class="mono">{{ formatEuro(data.purchase.pricePaidCents) }}</span></div>
-        <TargetGap v-else :item="data" />
+        <TargetGap :item="data" />
       </template>
     </Column>
     <Column header="7 days" style="width: 10rem">
@@ -281,6 +296,55 @@ function showPreview(event: MouseEvent, row: Row) {
 .kpi-sub {
   font-size: 12px;
   color: var(--ct-muted);
+}
+.kpi.saved {
+  display: block;
+  background: var(--ct-accent-soft);
+  color: var(--ct-ink);
+  text-decoration: none;
+}
+.kpi.saved .kpi-label {
+  font-weight: 600;
+}
+.kpi.saved .kpi-label,
+.kpi.saved .kpi-value {
+  color: var(--ct-accent-text);
+}
+.kpi.saved:hover .kpi-sub,
+.kpi.saved:focus-visible .kpi-sub {
+  text-decoration: underline;
+}
+.item-title {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+.copies {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 1px 8px;
+  border: 1px solid var(--ct-line-strong);
+  border-radius: 999px;
+  font-size: 12px;
+}
+.copies-bar {
+  display: inline-block;
+  width: 28px;
+  height: 4px;
+  border-radius: 2px;
+  background: var(--ct-line-strong);
+  overflow: hidden;
+}
+.copies-bar span {
+  display: block;
+  height: 100%;
+  background: var(--ct-accent);
+}
+.copies.done {
+  border-color: var(--ct-accent);
+  color: var(--ct-accent-text);
 }
 .toolbar {
   display: flex;
@@ -383,11 +447,6 @@ function showPreview(event: MouseEvent, row: Row) {
 }
 .pill {
   margin-top: 3px;
-}
-.paid {
-  margin-top: 3px;
-  font-size: 12px;
-  color: var(--ct-muted);
 }
 .listing {
   max-width: 11rem;

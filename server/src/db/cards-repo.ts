@@ -10,11 +10,11 @@ import type {
 } from '@ctzero/shared';
 import { NotFoundError } from '../errors';
 import { transaction, type Db } from './db';
-import { PURCHASE_COLUMNS, purchaseJoin, purchaseOf, type PurchaseColumns } from './purchases-repo';
+import { boughtQuantityColumn } from './purchases-repo';
 
 type SqlValue = string | number | null;
 
-interface CardRecord extends PurchaseColumns {
+interface CardRecord {
   id: number;
   name: string;
   scryfall_oracle_id: string;
@@ -37,6 +37,8 @@ interface CardRecord extends PurchaseColumns {
   blueprints_resolved_at: string | null;
   start_price_cents: number | null;
   start_price_at: string | null;
+  quantity_needed: number | null;
+  bought_quantity: number;
   created_at: string;
   updated_at: string;
 }
@@ -52,9 +54,12 @@ export interface NewCard {
   foil: boolean | null;
   thresholdCents: number;
   groupId?: number | null;
+  quantityNeeded?: number | null;
 }
 
-export type CardPatch = Partial<Omit<TrackedCard, 'id' | 'createdAt' | 'updatedAt' | 'expansionNames' | 'purchase'>>;
+export type CardPatch = Partial<
+  Omit<TrackedCard, 'id' | 'createdAt' | 'updatedAt' | 'expansionNames' | 'boughtQuantity' | 'startPriceCents' | 'startPriceAt'>
+>;
 
 const COLUMNS: Record<keyof CardPatch, string> = {
   name: 'name',
@@ -76,12 +81,24 @@ const COLUMNS: Record<keyof CardPatch, string> = {
   alertState: 'alert_state',
   lastNotifiedPriceCents: 'last_notified_price_cents',
   blueprintsResolvedAt: 'blueprints_resolved_at',
-  startPriceCents: 'start_price_cents',
-  startPriceAt: 'start_price_at',
+  quantityNeeded: 'quantity_needed',
 };
 
-/** Cards with their purchase, if any. */
-const SELECT_CARDS = `SELECT t.*, ${PURCHASE_COLUMNS} FROM tracked_cards t ${purchaseJoin('card')}`;
+/** Cards with their start price and the copies bought. */
+const SELECT_CARDS = `SELECT t.*, ${startPriceColumns('price_snapshots', 'tracked_card_id')}, ${boughtQuantityColumn('card')}
+  FROM tracked_cards t`;
+
+/**
+ * The start price of each item (its table aliased `t`): the first price found for its current
+ * configuration, so changing which offers count also sets a new start price.
+ */
+export function startPriceColumns(snapshots: string, ownerColumn: string): string {
+  const first = (column: string) =>
+    `(SELECT s.${column} FROM ${snapshots} s
+      WHERE s.${ownerColumn} = t.id AND s.config_version = t.config_version AND s.price_cents IS NOT NULL
+      ORDER BY s.id LIMIT 1)`;
+  return `${first('price_cents')} AS start_price_cents, ${first('synced_at')} AS start_price_at`;
+}
 
 function encode(key: keyof CardPatch, value: unknown): SqlValue {
   if (value === null || value === undefined) return null;
@@ -125,7 +142,8 @@ function toCard(db: Db, r: CardRecord): TrackedCard {
     blueprintsResolvedAt: r.blueprints_resolved_at,
     startPriceCents: r.start_price_cents,
     startPriceAt: r.start_price_at,
-    purchase: purchaseOf(r),
+    quantityNeeded: r.quantity_needed,
+    boughtQuantity: r.bought_quantity,
     createdAt: r.created_at,
     updatedAt: r.updated_at,
   };
@@ -147,8 +165,8 @@ export function insertCard(db: Db, c: NewCard, now: Date = new Date()): TrackedC
     .prepare(
       `INSERT INTO tracked_cards
         (name, scryfall_oracle_id, image_url, group_id, expansion_ids, excluded_expansions, languages, min_condition, foil,
-         threshold_cents, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+         threshold_cents, quantity_needed, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     )
     .run(
       c.name,
@@ -161,6 +179,7 @@ export function insertCard(db: Db, c: NewCard, now: Date = new Date()): TrackedC
       c.minCondition,
       c.foil === null ? null : c.foil ? 1 : 0,
       c.thresholdCents,
+      c.quantityNeeded ?? null,
       iso,
       iso,
     );
@@ -209,20 +228,13 @@ export interface Snapshot {
   priceCents: number | null;
 }
 
-/** Also records the start price of the card, if this is its first price. */
 export function insertSnapshot(db: Db, s: Snapshot & { cardId: number }): void {
-  transaction(db, () => {
-    db.prepare('INSERT INTO price_snapshots (tracked_card_id, config_version, synced_at, price_cents) VALUES (?, ?, ?, ?)').run(
-      s.cardId,
-      s.configVersion,
-      s.syncedAt,
-      s.priceCents,
-    );
-    if (s.priceCents === null) return;
-    db.prepare(
-      'UPDATE tracked_cards SET start_price_cents = ?, start_price_at = ? WHERE id = ? AND start_price_cents IS NULL',
-    ).run(s.priceCents, s.syncedAt, s.cardId);
-  });
+  db.prepare('INSERT INTO price_snapshots (tracked_card_id, config_version, synced_at, price_cents) VALUES (?, ?, ?, ?)').run(
+    s.cardId,
+    s.configVersion,
+    s.syncedAt,
+    s.priceCents,
+  );
 }
 
 export function listSnapshots(db: Db, cardId: number): Snapshot[] {

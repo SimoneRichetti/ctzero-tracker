@@ -21,6 +21,8 @@ export interface ReviewRow {
   status: RowStatus;
   include: boolean;
   thresholdCents: number | null;
+  /** Copies needed of the card, from the quantity in the list; editable in the review. */
+  quantityNeeded: number | null;
 }
 
 export function proposeThreshold(priceCents: number | null, def: ThresholdChoice): number | null {
@@ -47,7 +49,16 @@ export function buildReviewRows(
     if (result) {
       const status: RowStatus = result.alreadyTracked ? 'tracked' : result.priceCents === null ? 'no_offers' : 'ok';
       const thresholdCents = proposeThreshold(result.priceCents, def);
-      rows.push({ line, foil, result, error: null, status, thresholdCents, include: status !== 'tracked' && thresholdCents !== null });
+      rows.push({
+        line,
+        foil,
+        result,
+        error: null,
+        status,
+        thresholdCents,
+        quantityNeeded: line.quantity,
+        include: status !== 'tracked' && thresholdCents !== null,
+      });
       continue;
     }
     const error = errors.get(line);
@@ -60,6 +71,7 @@ export function buildReviewRows(
         status: error.status === 404 ? 'not_found' : 'error',
         include: false,
         thresholdCents: null,
+        quantityNeeded: line.quantity,
       });
     }
   }
@@ -97,5 +109,6 @@ export function createPayload(
     foil: row.foil,
     thresholdCents: row.thresholdCents!,
     groupId: opts.groupId,
+    quantityNeeded: row.quantityNeeded,
   };
 }

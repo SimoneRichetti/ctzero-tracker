@@ -10,7 +10,9 @@ import {
   type ExpansionRef,
   type PreviewResult,
   type PriceHistoryDto,
+  type PurchaseDetail,
   type PurchaseInput,
+  type PurchaseResult,
   type TrackedCard,
   type TrackedCardRow,
 } from '@ctzero/shared';
@@ -29,8 +31,8 @@ import {
   updateCard,
 } from '../db/cards-repo';
 import { transaction, type Db } from '../db/db';
-import { getGroup } from '../db/groups-repo';
-import { deletePurchaseOf, upsertPurchase } from '../db/purchases-repo';
+import { getGroup, listGroups } from '../db/groups-repo';
+import { getPurchase, linkPurchase, recordPurchase } from '../db/purchases-repo';
 import { NotFoundError, ValidationError, errorMessage } from '../errors';
 import { priceCard } from '../pricing/card-pricer';
 import { computeTrend, trendSince } from '../pricing/trend';
@@ -111,7 +113,43 @@ export class CardService {
     };
   }
 
-  async create(input: CardInput): Promise<TrackedCard> {
+  create(input: CardInput): Promise<TrackedCard> {
+    return this.insertAndPrice(input);
+  }
+
+  /**
+   * Tracks again the card of an archived purchase: same rules, target and group (if it still exists),
+   * with the price history copied back. The purchase is linked to the new card.
+   */
+  async restore(purchase: PurchaseDetail): Promise<TrackedCard> {
+    const rules = purchase.rules;
+    if (rules?.kind !== 'card' || purchase.thresholdCents === null) {
+      throw new ValidationError('The rules of this purchase were not recorded: add the card again');
+    }
+    const group = purchase.groupName ? listGroups(this.deps.db).find((g) => g.name === purchase.groupName) : undefined;
+    return this.insertAndPrice(
+      {
+        name: purchase.name,
+        expansionIds: rules.expansionIds,
+        excludedExpansionIds: (rules.excludedExpansions ?? []).map((e) => e.expansionId),
+        languages: rules.languages,
+        minCondition: rules.minCondition,
+        foil: rules.foil,
+        thresholdCents: purchase.thresholdCents,
+        groupId: group?.id ?? null,
+      },
+      (card) => {
+        for (const p of purchase.points) {
+          insertSnapshot(this.deps.db, { cardId: card.id, configVersion: card.configVersion, syncedAt: p.syncedAt, priceCents: p.priceCents });
+        }
+        // Checked here, in the transaction: a second "track again" made meanwhile creates nothing.
+        if (!linkPurchase(this.deps.db, purchase.id, 'card', card.id)) throw new ValidationError('This purchase is already tracked again');
+      },
+    );
+  }
+
+  /** `afterInsert` runs in the insert transaction (e.g. to restore a history). */
+  private async insertAndPrice(input: CardInput, afterInsert?: (card: TrackedCard) => void): Promise<TrackedCard> {
     const { db, catalog } = this.deps;
     this.assertGroup(input.groupId);
     const lookup = await catalog.lookup(input.name);
@@ -134,11 +172,14 @@ export class CardService {
           foil: input.foil,
           thresholdCents: input.thresholdCents,
           groupId: input.groupId ?? null,
+          quantityNeeded: input.quantityNeeded ?? null,
         },
         now,
       );
       replaceBlueprints(db, created.id, blueprints);
-      return updateCard(db, created.id, { blueprintsResolvedAt: now.toISOString() }, now);
+      const card = updateCard(db, created.id, { blueprintsResolvedAt: now.toISOString() }, now);
+      afterInsert?.(card);
+      return card;
     });
     return this.refreshSilently(card, blueprints);
   }
@@ -148,7 +189,10 @@ export class CardService {
     const card = getCard(db, id);
     if (!card) throw new NotFoundError('Card not found');
     this.assertGroup(input.groupId);
-    const groupPatch = input.groupId !== undefined ? { groupId: input.groupId } : {};
+    const groupPatch = {
+      ...(input.groupId !== undefined ? { groupId: input.groupId } : {}),
+      ...(input.quantityNeeded !== undefined ? { quantityNeeded: input.quantityNeeded } : {}),
+    };
     const now = this.now();
 
     // Same filters: only threshold and group. The group is checked again, an await may have happened.
@@ -210,24 +254,29 @@ export class CardService {
     if (!deleteCard(this.deps.db, id)) throw new NotFoundError('Card not found');
   }
 
-  /** Marks the card as bought: it stops being updated and the saving counts towards the total. */
-  purchase(id: number, input: PurchaseInput): TrackedCard {
+  /**
+   * Records a purchase of the card in the archive, as it is now. Without `keepTracking`
+   * the card then stops being tracked (the purchase outlives it).
+   */
+  purchase(id: number, input: PurchaseInput): PurchaseResult<TrackedCard> {
     const { db } = this.deps;
     return transaction(db, () => {
       const card = getCard(db, id);
       if (!card) throw new NotFoundError('Card not found');
-      upsertPurchase(db, 'card', card, input.pricePaidCents, this.now());
-      return getCard(db, id)!;
-    });
-  }
-
-  /** Undoes a purchase: the card is tracked again from the next update. */
-  unpurchase(id: number): TrackedCard {
-    const { db } = this.deps;
-    return transaction(db, () => {
-      if (!getCard(db, id)) throw new NotFoundError('Card not found');
-      if (!deletePurchaseOf(db, 'card', id)) throw new ValidationError('Card is not marked as bought');
-      return getCard(db, id)!;
+      const groupName = card.groupId !== null ? (getGroup(db, card.groupId)?.name ?? null) : null;
+      const rules = {
+        kind: 'card' as const,
+        expansionIds: card.expansionIds,
+        expansionNames: card.expansionNames,
+        excludedExpansions: card.excludedExpansions,
+        languages: card.languages,
+        minCondition: card.minCondition,
+        foil: card.foil,
+      };
+      const recorded = recordPurchase(db, 'card', { ...card, groupName, rules }, input, this.now());
+      if (!input.keepTracking) deleteCard(db, id);
+      // Read again: deleting the card unlinks the purchase.
+      return { purchase: getPurchase(db, recorded.id)!, item: input.keepTracking ? getCard(db, id) : null };
     });
   }
 

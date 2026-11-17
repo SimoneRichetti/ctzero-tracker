@@ -11,6 +11,7 @@ import { openDb } from './db/db';
 import { failOrphanRuns } from './db/runs-repo';
 import { ImportService } from './import/import-service';
 import { Scheduler } from './scheduler/scheduler';
+import { PurchaseService } from './purchases/purchase-service';
 import { SealedService } from './sealed/sealed-service';
 import { SyncService } from './sync/sync-service';
 
@@ -31,6 +32,7 @@ const cards = new CardService({ db, catalog, ct });
 const importer = new ImportService({ db, catalog, ct });
 const sealedCatalog = new SealedCatalog(ct, (maxAgeMs) => catalog.mtgExpansions(maxAgeMs));
 const sealed = new SealedService({ db, catalog: sealedCatalog, ct });
+const purchases = new PurchaseService({ db, cards, sealed });
 const sync = new SyncService({ db, catalog, ct, telegram });
 const scheduler = new Scheduler({ db, sync });
 
@@ -39,6 +41,7 @@ const app = buildApp({
   cards,
   importer,
   sealed,
+  purchases,
   sealedCatalog,
   sync,
   scheduler,

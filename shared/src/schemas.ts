@@ -19,19 +19,29 @@ export type CardFilters = z.infer<typeof cardFiltersSchema>;
 
 const thresholdCentsSchema = z.number().int().min(MIN_THRESHOLD_CENTS);
 
+/** Copies wanted of the item. `undefined` = leave unchanged (on update), `null` = not set. */
+const quantityNeededSchema = z.number().int().min(1).max(999).nullable().optional();
+
 /** `undefined` = leave unchanged (on update), `null` = no group. */
 const groupIdSchema = z.number().int().positive().nullable().optional();
 
 export const cardInputSchema = cardFiltersSchema.extend({
   thresholdCents: thresholdCentsSchema,
   groupId: groupIdSchema,
+  quantityNeeded: quantityNeededSchema,
 });
 export type CardInput = z.infer<typeof cardInputSchema>;
 
 export const cardUpdateSchema = cardInputSchema.omit({ name: true });
 export type CardUpdate = z.infer<typeof cardUpdateSchema>;
 
-export const purchaseInputSchema = z.object({ pricePaidCents: z.number().int().min(1) });
+export const purchaseInputSchema = z.object({
+  /** Price paid for each copy. */
+  pricePaidCents: z.number().int().min(1),
+  quantity: z.number().int().min(1).max(999).default(1),
+  /** false = the item is moved to the archive and no longer tracked. */
+  keepTracking: z.boolean(),
+});
 export type PurchaseInput = z.infer<typeof purchaseInputSchema>;
 
 export const groupInputSchema = z.object({ name: z.string().trim().min(1).max(80) });
@@ -73,6 +83,7 @@ export type SealedPreview = z.infer<typeof sealedPreviewSchema>;
 
 export const sealedInputSchema = sealedPreviewSchema.extend({
   thresholdCents: thresholdCentsSchema,
+  quantityNeeded: quantityNeededSchema,
 });
 export type SealedInput = z.infer<typeof sealedInputSchema>;
 

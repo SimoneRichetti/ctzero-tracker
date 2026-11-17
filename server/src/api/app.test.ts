@@ -16,8 +16,7 @@ function setup() {
     preview: vi.fn(async () => ({ priceCents: 1000, listing: null, presets: [], blueprintCount: 1 })),
     bulk: vi.fn(() => ({ updated: [1], skipped: [] })),
     history: vi.fn((_id: number) => ({ thresholdCents: 4000, configVersion: 1, points: [] })),
-    purchase: vi.fn((id: number, input: object) => ({ id, purchase: input })),
-    unpurchase: vi.fn((id: number) => ({ id, purchase: null })),
+    purchase: vi.fn((id: number, input: object) => ({ purchase: { id: 1, ...input }, item: { id } })),
   };
   const importer = {
     resolve: vi.fn(async () => ({
@@ -57,15 +56,20 @@ function setup() {
     delete: vi.fn(),
     preview: vi.fn(async () => ({ priceCents: 19000, listing: null, presets: [], blueprintCount: 1 })),
     history: vi.fn((_id: number) => ({ thresholdCents: 20000, configVersion: 1, points: [] })),
-    purchase: vi.fn((id: number, input: object) => ({ id, purchase: input })),
-    unpurchase: vi.fn((id: number) => ({ id, purchase: null })),
+    purchase: vi.fn((id: number, input: object) => ({ purchase: { id: 1, ...input }, item: { id } })),
   };
   const sealedCatalog = {
     listExpansions: vi.fn(async () => [{ id: 3627, code: 'mh3', name: 'Modern Horizons 3' }]),
     sealedProducts: vi.fn(async () => [product]),
     sealedProduct: vi.fn(async () => product),
   };
-  const deps = { db, cards, importer, sealed, sealedCatalog, sync, scheduler, catalog, scryfall, telegram, cardtraderConfigured: false };
+  const purchases = {
+    list: vi.fn(() => ({ items: [] })),
+    get: vi.fn((id: number) => ({ id, points: [] })),
+    delete: vi.fn(),
+    trackAgain: vi.fn(async (id: number) => ({ purchase: { id }, item: { id: 7 } })),
+  };
+  const deps = { db, cards, importer, sealed, purchases, sealedCatalog, sync, scheduler, catalog, scryfall, telegram, cardtraderConfigured: false };
   return { app: buildApp(deps as unknown as AppDeps), ...deps };
 }
 
@@ -368,23 +372,32 @@ describe('history API', () => {
 });
 
 describe('purchases API', () => {
-  it('PUT /api/cards/:id/purchase validates and forwards the price paid', async () => {
+  it('POST /api/cards/:id/purchases validates and forwards the purchase', async () => {
     const { app, cards } = setup();
-    const res = await app.inject({ method: 'PUT', url: '/api/cards/4/purchase', payload: { pricePaidCents: 1250 } });
-    expect(res.statusCode).toBe(200);
-    expect(cards.purchase).toHaveBeenCalledWith(4, { pricePaidCents: 1250 });
-    expect((await app.inject({ method: 'PUT', url: '/api/cards/4/purchase', payload: { pricePaidCents: 0 } })).statusCode).toBe(400);
+    const payload = { pricePaidCents: 1250, quantity: 2, keepTracking: true };
+    const res = await app.inject({ method: 'POST', url: '/api/cards/4/purchases', payload });
+    expect(res.statusCode).toBe(201);
+    expect(cards.purchase).toHaveBeenCalledWith(4, payload);
+    // The quantity defaults to 1; keepTracking must be explicit.
+    await app.inject({ method: 'POST', url: '/api/cards/4/purchases', payload: { pricePaidCents: 100, keepTracking: false } });
+    expect(cards.purchase).toHaveBeenLastCalledWith(4, { pricePaidCents: 100, quantity: 1, keepTracking: false });
+    for (const bad of [{ pricePaidCents: 0, keepTracking: true }, { pricePaidCents: 100 }, { pricePaidCents: 100, quantity: 0, keepTracking: true }]) {
+      expect((await app.inject({ method: 'POST', url: '/api/cards/4/purchases', payload: bad })).statusCode).toBe(400);
+    }
   });
 
-  it('sealed purchases, undo and GET /api/purchases', async () => {
-    const { app, cards, sealed } = setup();
-    expect((await app.inject({ method: 'DELETE', url: '/api/cards/4/purchase' })).statusCode).toBe(200);
-    expect(cards.unpurchase).toHaveBeenCalledWith(4);
-    await app.inject({ method: 'PUT', url: '/api/sealed/2/purchase', payload: { pricePaidCents: 9900 } });
-    expect(sealed.purchase).toHaveBeenCalledWith(2, { pricePaidCents: 9900 });
-    await app.inject({ method: 'DELETE', url: '/api/sealed/2/purchase' });
-    expect(sealed.unpurchase).toHaveBeenCalledWith(2);
-    const res = await app.inject({ method: 'GET', url: '/api/purchases' });
-    expect(res.json()).toEqual({ totalSavedCents: 0, totalPaidCents: 0, items: [] });
+  it('sealed purchases and the archive', async () => {
+    const { app, sealed, purchases } = setup();
+    const payload = { pricePaidCents: 9900, quantity: 1, keepTracking: false };
+    expect((await app.inject({ method: 'POST', url: '/api/sealed/2/purchases', payload })).statusCode).toBe(201);
+    expect(sealed.purchase).toHaveBeenCalledWith(2, payload);
+    expect((await app.inject({ method: 'GET', url: '/api/purchases' })).json()).toEqual({ items: [] });
+    expect((await app.inject({ method: 'GET', url: '/api/purchases/3' })).json()).toEqual({ id: 3, points: [] });
+    expect((await app.inject({ method: 'DELETE', url: '/api/purchases/3' })).statusCode).toBe(204);
+    expect(purchases.delete).toHaveBeenCalledWith(3);
+    const again = await app.inject({ method: 'POST', url: '/api/purchases/3/track-again' });
+    expect(again.json()).toEqual({ purchase: { id: 3 }, item: { id: 7 } });
+    purchases.trackAgain.mockRejectedValueOnce(new ValidationError('This purchase is still tracked'));
+    expect((await app.inject({ method: 'POST', url: '/api/purchases/3/track-again' })).statusCode).toBe(422);
   });
 });

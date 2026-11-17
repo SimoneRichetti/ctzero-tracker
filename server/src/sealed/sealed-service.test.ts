@@ -2,7 +2,7 @@ import type { SealedInput, SealedProduct } from '@ctzero/shared';
 import { beforeEach, describe, expect, it, vi, type Mock } from 'vitest';
 import { HttpError } from '../clients/http';
 import { openDb, type Db } from '../db/db';
-import { listPurchases } from '../db/purchases-repo';
+import { getPurchaseDetail, listPurchases } from '../db/purchases-repo';
 import { getSealed, insertSealed, insertSealedSnapshot, listSealedSnapshots, updateSealed } from '../db/sealed-repo';
 import { NotFoundError, ValidationError } from '../errors';
 import { makeProduct } from '../test-utils';
@@ -220,24 +220,52 @@ describe('list and history', () => {
 });
 
 describe('purchases', () => {
-  it('records the start price, marks the product as bought and undoes it', async () => {
+  it('the copies needed can be set when the product is created', async () => {
+    expect(await service.create({ ...input, quantityNeeded: 2 })).toMatchObject({ quantityNeeded: 2, boughtQuantity: 0 });
+  });
+
+  it('keep tracking: records the start price and freezes the product', async () => {
     const s = await service.create(input);
-    expect(s).toMatchObject({ startPriceCents: 19000, startPriceAt: t0.toISOString() });
+    expect(s).toMatchObject({ startPriceCents: 19000, startPriceAt: t0.toISOString(), boughtQuantity: 0 });
+    price = 18000;
+    await service.update(s.id, { ...input, thresholdCents: 15000, quantityNeeded: 2 }); // same languages: not re-priced
+    const { purchase, item } = service.purchase(s.id, { pricePaidCents: 16500, quantity: 1, keepTracking: true });
+    expect(purchase).toMatchObject({
+      kind: 'sealed',
+      itemId: s.id,
+      groupName: null,
+      rules: { kind: 'sealed', blueprintId: 279368, expansionId: 3627, expansionName: 'Modern Horizons 3', categoryName: 'Booster Box', languages: ['en'] },
+      thresholdCents: 15000,
+      startPriceCents: 19000,
+      savedCents: 2500,
+    });
+    expect(item).toMatchObject({ boughtQuantity: 1, quantityNeeded: 2 });
+    expect(listPurchases(db)).toHaveLength(1);
+  });
+
+  it('changing the languages sets a new start price, from the new product', async () => {
+    const s = await service.create(input);
     price = 17000;
-    await service.update(s.id, { ...input, languages: ['it'] }); // re-priced: the start price stays
-    const bought = service.purchase(s.id, { pricePaidCents: 16500 });
-    expect(bought.startPriceCents).toBe(19000);
-    expect(bought.purchase).toEqual({ pricePaidCents: 16500, startPriceCents: 19000, savedCents: 2500, purchasedAt: t0.toISOString() });
-    expect(listPurchases(db)[0]).toMatchObject({ kind: 'sealed', itemId: s.id, savedCents: 2500 });
-    expect(service.unpurchase(s.id).purchase).toBeNull();
-    expect(() => service.unpurchase(s.id)).toThrow(ValidationError);
+    const updated = await service.update(s.id, { ...input, languages: ['it'] });
+    expect(updated).toMatchObject({ startPriceCents: 17000, lastPriceCents: 17000 });
+  });
+
+  it('stop tracking, then track again with the same languages, target and history', async () => {
+    const s = await service.create({ ...input, languages: ['it'] });
+    const { purchase, item } = service.purchase(s.id, { pricePaidCents: 18000, quantity: 1, keepTracking: false });
+    expect(item).toBeNull();
+    expect(getSealed(db, s.id)).toBeNull();
+    price = 18500;
+    const again = await service.restore(getPurchaseDetail(db, purchase.id)!);
+    expect(again).toMatchObject({ ...product, languages: ['it'], thresholdCents: 20000, startPriceCents: 19000, lastPriceCents: 18500, boughtQuantity: 1 });
+    expect(listSealedSnapshots(db, again.id).map((p) => p.priceCents)).toEqual([19000, 18500]);
+    await expect(service.restore(getPurchaseDetail(db, purchase.id)!)).rejects.toThrow(ValidationError);
   });
 
   it('missing product → NotFoundError; the purchase outlives the product', async () => {
-    expect(() => service.purchase(999, { pricePaidCents: 100 })).toThrow(NotFoundError);
-    expect(() => service.unpurchase(999)).toThrow(NotFoundError);
+    expect(() => service.purchase(999, { pricePaidCents: 100, quantity: 1, keepTracking: true })).toThrow(NotFoundError);
     const s = await service.create(input);
-    service.purchase(s.id, { pricePaidCents: 18000 });
+    service.purchase(s.id, { pricePaidCents: 18000, quantity: 1, keepTracking: true });
     service.delete(s.id);
     expect(listPurchases(db)).toMatchObject([{ kind: 'sealed', itemId: null, savedCents: 1000 }]);
   });

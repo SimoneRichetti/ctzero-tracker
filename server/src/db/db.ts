@@ -148,6 +148,97 @@ export const MIGRATIONS: string[] = [
     SELECT id, 'card', tracked_card_id, name, image_url, start_price_cents, price_paid_cents, purchased_at FROM card_purchases;
   DROP TABLE card_purchases;
   `,
+  // Purchases become an archive: a frozen copy of the item (rules, target, offer, price history), several
+  // per item, with a quantity. Bought items are tracked again: buying no longer pauses them.
+  // The start price is now read from the snapshots (first price of the current configuration).
+  `
+  CREATE TABLE purchases_new (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    kind TEXT NOT NULL CHECK (kind IN ('card', 'sealed')),
+    tracked_card_id INTEGER REFERENCES tracked_cards(id) ON DELETE SET NULL,
+    tracked_sealed_id INTEGER REFERENCES tracked_sealed(id) ON DELETE SET NULL,
+    name TEXT NOT NULL,
+    image_url TEXT,
+    group_name TEXT,
+    rules TEXT,
+    threshold_cents INTEGER,
+    market_price_cents INTEGER,
+    listing TEXT,
+    start_price_cents INTEGER,
+    start_price_at TEXT,
+    price_paid_cents INTEGER NOT NULL,
+    quantity INTEGER NOT NULL DEFAULT 1 CHECK (quantity >= 1),
+    purchased_at TEXT NOT NULL
+  );
+  INSERT INTO purchases_new (id, kind, tracked_card_id, tracked_sealed_id, name, image_url, group_name, rules,
+      threshold_cents, market_price_cents, listing, start_price_cents, start_price_at, price_paid_cents, purchased_at)
+    SELECT p.id, p.kind, p.tracked_card_id, p.tracked_sealed_id, p.name, p.image_url, g.name,
+      CASE
+        WHEN c.id IS NOT NULL THEN json_object(
+          'kind', 'card',
+          'expansionIds', json(c.expansion_ids),
+          'expansionNames', (
+            SELECT json_group_array(n) FROM (
+              SELECT DISTINCT b.expansion_name AS n FROM card_blueprints b
+              WHERE b.tracked_card_id = c.id AND c.expansion_ids <> '[]' ORDER BY b.expansion_name
+            )
+          ),
+          'languages', json(c.languages),
+          'minCondition', c.min_condition,
+          'foil', CASE c.foil WHEN 1 THEN json('true') WHEN 0 THEN json('false') END
+        )
+        WHEN s.id IS NOT NULL THEN json_object(
+          'kind', 'sealed',
+          'blueprintId', s.blueprint_id,
+          'expansionId', s.expansion_id,
+          'expansionName', s.expansion_name,
+          'categoryName', s.category_name,
+          'languages', json(s.languages)
+        )
+      END,
+      COALESCE(c.threshold_cents, s.threshold_cents),
+      COALESCE(c.last_price_cents, s.last_price_cents),
+      COALESCE(c.last_listing, s.last_listing),
+      p.start_price_cents,
+      COALESCE(c.start_price_at, s.start_price_at),
+      p.price_paid_cents,
+      p.purchased_at
+    FROM purchases p
+    LEFT JOIN tracked_cards c ON c.id = p.tracked_card_id
+    LEFT JOIN card_groups g ON g.id = c.group_id
+    LEFT JOIN tracked_sealed s ON s.id = p.tracked_sealed_id;
+  DROP TABLE purchases;
+  ALTER TABLE purchases_new RENAME TO purchases;
+  CREATE INDEX purchases_card ON purchases(tracked_card_id);
+  CREATE INDEX purchases_sealed ON purchases(tracked_sealed_id);
+
+  CREATE TABLE purchase_snapshots (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    purchase_id INTEGER NOT NULL REFERENCES purchases(id) ON DELETE CASCADE,
+    synced_at TEXT NOT NULL,
+    price_cents INTEGER
+  );
+  CREATE INDEX purchase_snapshots_purchase ON purchase_snapshots(purchase_id);
+  INSERT INTO purchase_snapshots (purchase_id, synced_at, price_cents)
+    SELECT p.id, s.synced_at, s.price_cents FROM purchases p
+    JOIN tracked_cards c ON c.id = p.tracked_card_id
+    JOIN price_snapshots s ON s.tracked_card_id = c.id AND s.config_version = c.config_version AND s.synced_at <= p.purchased_at
+    ORDER BY s.id;
+  INSERT INTO purchase_snapshots (purchase_id, synced_at, price_cents)
+    SELECT p.id, s.synced_at, s.price_cents FROM purchases p
+    JOIN tracked_sealed t ON t.id = p.tracked_sealed_id
+    JOIN sealed_price_snapshots s ON s.tracked_sealed_id = t.id AND s.config_version = t.config_version AND s.synced_at <= p.purchased_at
+    ORDER BY s.id;
+
+  ALTER TABLE tracked_cards DROP COLUMN start_price_cents;
+  ALTER TABLE tracked_cards DROP COLUMN start_price_at;
+  ALTER TABLE tracked_sealed DROP COLUMN start_price_cents;
+  ALTER TABLE tracked_sealed DROP COLUMN start_price_at;
+  ALTER TABLE tracked_cards ADD COLUMN quantity_needed INTEGER;
+  ALTER TABLE tracked_sealed ADD COLUMN quantity_needed INTEGER;
+  CREATE INDEX price_snapshots_card_version ON price_snapshots(tracked_card_id, config_version);
+  CREATE INDEX sealed_price_snapshots_sealed_version ON sealed_price_snapshots(tracked_sealed_id, config_version);
+  `,
   `
   ALTER TABLE tracked_cards ADD COLUMN excluded_expansions TEXT NOT NULL DEFAULT '[]';
   `,
