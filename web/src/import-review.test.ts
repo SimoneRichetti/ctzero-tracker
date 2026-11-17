@@ -9,7 +9,7 @@ import {
   setRowThreshold,
 } from './import-review';
 
-const line = (name: string, lineNo: number, foil = false): DecklistLine => ({ name, setCode: null, setGuessed: false, foil, lineNo });
+const line = (name: string, lineNo: number, foil = false): DecklistLine => ({ name, setCode: null, setGuessed: false, foil, quantity: null, lineNo });
 const result = (over: Partial<ImportResolveResult> = {}): ImportResolveResult => ({
   name: 'Sol Ring',
   imageUrl: null,
@@ -140,8 +140,8 @@ describe('inclusion and threshold edits', () => {
 });
 
 describe('createPayload', () => {
-  it('builds the card input with the resolved name and expansions', () => {
-    const l = line('sol ring', 1, true);
+  it('builds the card input with the resolved name, expansions and the copies of the list', () => {
+    const l = { ...line('sol ring', 1, true), quantity: 4 };
     const [row] = buildReviewRows([l], { results: [{ item: l, value: result({ expansionIds: [7] }) }], errors: [] }, percent, false);
     expect(createPayload(row!, { languages: ['en'], minCondition: 'Near Mint', groupId: 4 })).toEqual({
       name: 'Sol Ring',
@@ -151,6 +151,9 @@ describe('createPayload', () => {
       foil: true,
       thresholdCents: 900,
       groupId: 4,
+      quantityNeeded: 4,
     });
+    row!.quantityNeeded = null; // cleared in the review
+    expect(createPayload(row!, { languages: ['en'], minCondition: 'Near Mint', groupId: 4 })).toMatchObject({ quantityNeeded: null });
   });
 });

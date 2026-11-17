@@ -2,7 +2,7 @@ import { mkdtempSync } from 'node:fs';
 import { DatabaseSync } from 'node:sqlite';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { DEFAULT_SETTINGS, type Listing } from '@ctzero/shared';
+import { DEFAULT_SETTINGS, type Listing, type TrackedCard } from '@ctzero/shared';
 import { beforeEach, describe, expect, it } from 'vitest';
 import { NotFoundError } from '../errors';
 import {
@@ -20,6 +20,15 @@ import {
   type NewCard,
 } from './cards-repo';
 import { MIGRATIONS, openDb, type Db } from './db';
+import {
+  deletePurchase,
+  getPurchaseDetail,
+  linkPurchase,
+  listPurchases,
+  recordPurchase,
+  type FrozenItem,
+} from './purchases-repo';
+import { getSealed } from './sealed-repo';
 import {
   failOrphanRuns,
   finishRun,
@@ -85,6 +94,160 @@ describe('openDb', () => {
     expect(getBlueprints(migrated, 1)).toHaveLength(1);
     expect(updateCard(migrated, 2, { foil: null }).foil).toBeNull();
     migrated.close();
+  });
+
+  it('backfills the start price from the first priced snapshot', () => {
+    const path = join(mkdtempSync(join(tmpdir(), 'ctzero-')), 'test.db');
+    const old = new DatabaseSync(path);
+    for (const m of MIGRATIONS.slice(0, 4)) old.exec(m);
+    old.exec('PRAGMA user_version = 4');
+    old.exec(`INSERT INTO tracked_cards (id, name, scryfall_oracle_id, min_condition, foil, threshold_cents, created_at, updated_at)
+      VALUES (1, 'A', 'oa', 'Near Mint', 0, 100, 'x', 'x'), (2, 'B', 'ob', 'Near Mint', 0, 100, 'x', 'x')`);
+    old.exec(`INSERT INTO price_snapshots (tracked_card_id, config_version, synced_at, price_cents) VALUES
+      (1, 1, 't0', NULL), (1, 1, 't1', 500), (1, 2, 't2', 300), (2, 1, 't0', NULL)`);
+    old.exec(`INSERT INTO tracked_sealed (id, name, blueprint_id, expansion_id, expansion_name, category_name, threshold_cents, created_at, updated_at)
+      VALUES (1, 'Box', 10, 5, 'Alpha', 'Booster Box', 100, 'x', 'x')`);
+    old.exec(`INSERT INTO sealed_price_snapshots (tracked_sealed_id, config_version, synced_at, price_cents) VALUES (1, 1, 't3', 9000), (1, 1, 't4', 8000)`);
+    old.close();
+    const migrated = openDb(path);
+    expect(getCard(migrated, 1)).toMatchObject({ startPriceCents: 500, startPriceAt: 't1' });
+    expect(getCard(migrated, 2)).toMatchObject({ startPriceCents: null, startPriceAt: null });
+    expect(getSealed(migrated, 1)).toMatchObject({ startPriceCents: 9000, startPriceAt: 't3' });
+    migrated.close();
+  });
+});
+
+describe('migration 6', () => {
+  it('moves card purchases to the generic purchases table', () => {
+    const path = join(mkdtempSync(join(tmpdir(), 'ctzero-')), 'test.db');
+    const old = new DatabaseSync(path);
+    for (const m of MIGRATIONS.slice(0, 5)) old.exec(m);
+    old.exec('PRAGMA user_version = 5');
+    old.exec(`INSERT INTO tracked_cards (id, name, scryfall_oracle_id, min_condition, foil, threshold_cents, start_price_cents, created_at, updated_at)
+      VALUES (1, 'A', 'oa', 'Near Mint', 0, 100, 633, 'x', 'x')`);
+    old.exec(`INSERT INTO card_purchases (id, tracked_card_id, name, image_url, start_price_cents, price_paid_cents, purchased_at)
+      VALUES (1, 1, 'A', 'img', 633, 415, 't1'), (2, NULL, 'Gone', NULL, NULL, 200, 't0')`);
+    old.close();
+    const migrated = openDb(path);
+    expect(listPurchases(migrated).map((p) => [p.kind, p.itemId, p.name, p.savedCents])).toEqual([
+      ['card', 1, 'A', 218],
+      ['card', null, 'Gone', null],
+    ]);
+    migrated.close();
+  });
+});
+
+describe('migration 7', () => {
+  it('turns the purchases into frozen copies and tracks the bought items again', () => {
+    const path = join(mkdtempSync(join(tmpdir(), 'ctzero-')), 'test.db');
+    const old = new DatabaseSync(path);
+    for (const m of MIGRATIONS.slice(0, 6)) old.exec(m);
+    old.exec('PRAGMA user_version = 6');
+    old.exec(`INSERT INTO card_groups (id, name, created_at) VALUES (1, 'Pauper', 'x')`);
+    old.exec(`INSERT INTO tracked_cards (id, name, scryfall_oracle_id, group_id, expansion_ids, languages, min_condition, foil,
+        threshold_cents, config_version, last_price_cents, start_price_cents, start_price_at, created_at, updated_at)
+      VALUES (1, 'A', 'oa', 1, '[5]', '["en"]', 'Near Mint', 1, 300, 2, 350, 400, 't1', 'x', 'x')`);
+    old.exec(`INSERT INTO card_blueprints VALUES (1, 10, 5, 'Alpha')`);
+    old.exec(`INSERT INTO price_snapshots (tracked_card_id, config_version, synced_at, price_cents) VALUES
+      (1, 1, 't0', 900), (1, 2, 't1', 400), (1, 2, 't2', 350), (1, 2, 't9', 330)`);
+    old.exec(`INSERT INTO tracked_sealed (id, name, blueprint_id, expansion_id, expansion_name, category_name, languages,
+        threshold_cents, created_at, updated_at) VALUES (1, 'Box', 20, 6, 'Beta', 'Booster Box', '[]', 9000, 'x', 'x')`);
+    old.exec(`INSERT INTO purchases (id, kind, tracked_card_id, tracked_sealed_id, name, image_url, start_price_cents, price_paid_cents, purchased_at)
+      VALUES (1, 'card', 1, NULL, 'A', 'img', 400, 350, 't5'), (2, 'sealed', NULL, 1, 'Box', NULL, NULL, 8500, 't6'),
+             (3, 'card', NULL, NULL, 'Gone', NULL, NULL, 200, 't0')`);
+    old.close();
+
+    const migrated = openDb(path);
+    expect(getPurchaseDetail(migrated, 1)).toMatchObject({
+      itemId: 1,
+      groupName: 'Pauper',
+      rules: { kind: 'card', expansionIds: [5], expansionNames: ['Alpha'], languages: ['en'], minCondition: 'Near Mint', foil: true },
+      thresholdCents: 300,
+      marketPriceCents: 350,
+      startPriceCents: 400,
+      startPriceAt: 't1',
+      quantity: 1,
+      savedCents: 50,
+      // Only the current configuration, up to the purchase.
+      points: [
+        { syncedAt: 't1', priceCents: 400 },
+        { syncedAt: 't2', priceCents: 350 },
+      ],
+    });
+    expect(getPurchaseDetail(migrated, 2)).toMatchObject({
+      itemId: 1,
+      rules: { kind: 'sealed', blueprintId: 20, expansionId: 6, expansionName: 'Beta', categoryName: 'Booster Box', languages: [] },
+      points: [],
+    });
+    expect(getPurchaseDetail(migrated, 3)).toMatchObject({ itemId: null, rules: null, points: [] });
+    expect(getCard(migrated, 1)).toMatchObject({ boughtQuantity: 1, quantityNeeded: null, startPriceCents: 400 });
+    expect(getSealed(migrated, 1)).toMatchObject({ boughtQuantity: 1, quantityNeeded: null });
+    migrated.close();
+  });
+});
+
+describe('start price and purchases', () => {
+  const frozen = (card: TrackedCard): FrozenItem => ({
+    ...card,
+    groupName: null,
+    rules: { kind: 'card', expansionIds: [], expansionNames: [], languages: [], minCondition: 'Near Mint', foil: null },
+  });
+
+  it('the first priced snapshot sets the start price, later ones do not change it', () => {
+    const card = insertCard(db, newCard, t0);
+    insertSnapshot(db, { cardId: card.id, configVersion: 1, syncedAt: t0.toISOString(), priceCents: null });
+    expect(getCard(db, card.id)!.startPriceCents).toBeNull();
+    insertSnapshot(db, { cardId: card.id, configVersion: 1, syncedAt: t1.toISOString(), priceCents: 400 });
+    insertSnapshot(db, { cardId: card.id, configVersion: 2, syncedAt: t2.toISOString(), priceCents: 250 });
+    expect(getCard(db, card.id)).toMatchObject({ startPriceCents: 400, startPriceAt: t1.toISOString() });
+  });
+
+  it('a purchase freezes the item and its history so far; several add up on the item', () => {
+    const card = insertCard(db, newCard, t0);
+    insertSnapshot(db, { cardId: card.id, configVersion: 1, syncedAt: t0.toISOString(), priceCents: 400 });
+    insertSnapshot(db, { cardId: card.id, configVersion: 1, syncedAt: t1.toISOString(), priceCents: 350 });
+    const first = recordPurchase(db, 'card', frozen(getCard(db, card.id)!), { pricePaidCents: 300, quantity: 2 }, t1);
+    insertSnapshot(db, { cardId: card.id, configVersion: 1, syncedAt: t2.toISOString(), priceCents: 320 });
+    recordPurchase(db, 'card', frozen(getCard(db, card.id)!), { pricePaidCents: 450, quantity: 1 }, t2);
+
+    expect(getPurchaseDetail(db, first.id)).toMatchObject({
+      itemId: card.id,
+      startPriceCents: 400,
+      pricePaidCents: 300,
+      quantity: 2,
+      savedCents: 200,
+      points: [
+        { syncedAt: t0.toISOString(), priceCents: 400 },
+        { syncedAt: t1.toISOString(), priceCents: 350 },
+      ],
+    });
+    expect(getCard(db, card.id)!.boughtQuantity).toBe(3);
+    expect(listCards(db)[0]!.boughtQuantity).toBe(3);
+    expect(listPurchases(db).map((p) => p.savedCents)).toEqual([-50, 200]);
+
+    deleteCard(db, card.id);
+    expect(listPurchases(db).map((p) => p.itemId)).toEqual([null, null]);
+    expect(getPurchaseDetail(db, first.id)!.points).toHaveLength(2);
+  });
+
+  it('a card never priced has an unknown saving; deleting a purchase removes its history', () => {
+    const card = insertCard(db, newCard, t0);
+    const p = recordPurchase(db, 'card', frozen(card), { pricePaidCents: 300, quantity: 1 }, t1);
+    expect(p).toMatchObject({ startPriceCents: null, savedCents: null });
+    expect(deletePurchase(db, p.id)).toBe(true);
+    expect(deletePurchase(db, p.id)).toBe(false);
+    expect(getCard(db, card.id)!.boughtQuantity).toBe(0);
+    expect(db.prepare('SELECT COUNT(*) AS n FROM purchase_snapshots').get()).toEqual({ n: 0 });
+  });
+
+  it('only an archived purchase can be linked to a new item', () => {
+    const card = insertCard(db, newCard, t0);
+    const p = recordPurchase(db, 'card', frozen(card), { pricePaidCents: 300, quantity: 1 }, t1);
+    const other = insertCard(db, { ...newCard, scryfallOracleId: 'o2' }, t0);
+    expect(linkPurchase(db, p.id, 'card', other.id)).toBe(false);
+    deleteCard(db, card.id);
+    expect(linkPurchase(db, p.id, 'card', other.id)).toBe(true);
+    expect(getCard(db, other.id)!.boughtQuantity).toBe(1);
   });
 });
 

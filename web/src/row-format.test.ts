@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { Listing } from '@ctzero/shared';
-import { cardMetaLine, cardTraderUrl, formatChange, gapSentence, largeImageUrl, listingLine, sealedMetaLine, targetGap } from './row-format';
+import { cardMetaLine, cardTraderUrl, formatChange, gapSentence, largeImageUrl, listingLine, savingText, sealedMetaLine, sinceStart, targetGap } from './row-format';
 
 describe('cardMetaLine', () => {
   it('describes the matching rules', () => {
@@ -99,5 +99,24 @@ describe('cardTraderUrl', () => {
     expect(cardTraderUrl({ lastListing: listing })).toBe('https://www.cardtrader.com/x');
     expect(cardTraderUrl({ lastListing: null, blueprintId: 7 })).toBe('https://www.cardtrader.com/cards/7');
     expect(cardTraderUrl({ lastListing: null })).toBe('https://www.cardtrader.com');
+  });
+});
+
+describe('sinceStart', () => {
+  it('compares the current price with the start price', () => {
+    expect(sinceStart({ startPriceCents: 1000, lastPriceCents: 875 })).toBe('now 12.5% lower');
+    expect(sinceStart({ startPriceCents: 1000, lastPriceCents: 1100 })).toBe('now 10.0% higher');
+    expect(sinceStart({ startPriceCents: 1000, lastPriceCents: 1000 })).toBe('unchanged since');
+    expect(sinceStart({ startPriceCents: null, lastPriceCents: 1000 })).toBeNull();
+    expect(sinceStart({ startPriceCents: 1000, lastPriceCents: null })).toBeNull();
+  });
+});
+
+describe('savingText', () => {
+  it('words savings and overpayments', () => {
+    expect(savingText(300)).toBe('Saved €3.00');
+    expect(savingText(-50)).toBe('Paid €0.50 more');
+    expect(savingText(0)).toBe('Saved nothing');
+    expect(savingText(null)).toBeNull();
   });
 });

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { formatAt, formatClock, dayLabel, formatWhen } from './time-format';
+import { dayInText, formatAt, formatClock, dayLabel, formatWhen } from './time-format';
 
 // Local times, so the tests do not depend on the machine's time zone.
 const now = new Date(2026, 9, 16, 15, 30);
@@ -20,6 +20,14 @@ describe('time formatting', () => {
   it('only the clock for today', () => {
     expect(formatWhen(at(16, 14, 2), now)).toBe('14:02');
     expect(formatWhen(at(15, 14, 2), now)).toBe('Yesterday, 14:02');
+  });
+
+  it('days inside a sentence: lowercase names, prefixed dates', () => {
+    expect(dayInText(at(16, 9, 0), now, 'on ')).toBe('today');
+    expect(dayInText(at(15, 9, 0), now, 'on ')).toBe('yesterday');
+    expect(dayInText(at(17, 9, 0), now)).toBe('tomorrow');
+    expect(dayInText(at(12, 9, 0), now, 'on ')).toBe('on Oct 12');
+    expect(dayInText(at(12, 9, 0), now)).toBe('Oct 12');
   });
 
   it('sentences with a day only when it is not today', () => {

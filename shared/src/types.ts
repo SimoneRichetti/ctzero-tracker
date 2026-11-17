@@ -42,8 +42,86 @@ export interface TrackedCard {
   alertState: AlertState | null;
   lastNotifiedPriceCents: number | null;
   blueprintsResolvedAt: string | null;
+  /** First price found for the current filters (null = not priced yet): changing the filters resets it. */
+  startPriceCents: number | null;
+  startPriceAt: string | null;
+  /** Copies the user wants to buy; null = not set. */
+  quantityNeeded: number | null;
+  /** Copies bought while tracking this card (sum of its purchases). */
+  boughtQuantity: number;
   createdAt: string;
   updatedAt: string;
+}
+
+export type ItemKind = 'card' | 'sealed';
+
+/** Which offers counted for a card when it was bought. */
+export interface CardPurchaseRules {
+  kind: 'card';
+  expansionIds: number[];
+  expansionNames: string[];
+  languages: Language[];
+  minCondition: Condition;
+  foil: boolean | null;
+}
+
+/** Which product and offers counted for a sealed product when it was bought. */
+export interface SealedPurchaseRules {
+  kind: 'sealed';
+  blueprintId: number;
+  expansionId: number;
+  expansionName: string;
+  categoryName: string;
+  languages: Language[];
+}
+
+export type PurchaseRules = CardPurchaseRules | SealedPurchaseRules;
+
+/**
+ * A purchase in the archive: a frozen copy of the item as it was when bought.
+ * It survives the item being removed, and the item may keep being tracked.
+ */
+export interface PurchaseRecord {
+  id: number;
+  kind: ItemKind;
+  /** Id of the tracked card or sealed product; null = no longer tracked (archived). */
+  itemId: number | null;
+  name: string;
+  imageUrl: string | null;
+  /** Group of the card when bought. */
+  groupName: string | null;
+  /** null only for purchases whose item was removed before the rules were recorded. */
+  rules: PurchaseRules | null;
+  /** Target when bought. */
+  thresholdCents: number | null;
+  /** CT Zero price and offer when bought. */
+  marketPriceCents: number | null;
+  listing: Listing | null;
+  /** First price with the rules of the time; null if the item had never been priced. */
+  startPriceCents: number | null;
+  startPriceAt: string | null;
+  /** Price paid for each copy. */
+  pricePaidCents: number;
+  quantity: number;
+  /** (startPriceCents − pricePaidCents) × quantity (negative = paid more); null if the start price is unknown. */
+  savedCents: number | null;
+  purchasedAt: string;
+}
+
+/** A purchase with its price history up to the purchase. */
+export interface PurchaseDetail extends PurchaseRecord {
+  points: { syncedAt: string; priceCents: number | null }[];
+}
+
+export interface PurchasesDto {
+  /** Newest first. */
+  items: PurchaseRecord[];
+}
+
+/** Result of buying an item: `item` is null when its tracking stopped. */
+export interface PurchaseResult<T> {
+  purchase: PurchaseRecord;
+  item: T | null;
 }
 
 export interface CardBlueprint {
@@ -136,6 +214,13 @@ export interface TrackedSealed {
   lastError: string | null;
   alertState: AlertState | null;
   lastNotifiedPriceCents: number | null;
+  /** First price found for the current languages (null = not priced yet): changing them resets it. */
+  startPriceCents: number | null;
+  startPriceAt: string | null;
+  /** Copies the user wants to buy; null = not set. */
+  quantityNeeded: number | null;
+  /** Copies bought while tracking this product (sum of its purchases). */
+  boughtQuantity: number;
   createdAt: string;
   updatedAt: string;
 }

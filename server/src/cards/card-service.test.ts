@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi, type Mock } from 'vitest';
 import type { CardLookup } from '../catalog/catalog';
 import { getBlueprints, getCard, insertCard, insertSnapshot, listCards, listSnapshots, updateCard } from '../db/cards-repo';
 import { deleteGroup, insertGroup } from '../db/groups-repo';
+import { getPurchaseDetail } from '../db/purchases-repo';
 import { openDb, type Db } from '../db/db';
 import { NotFoundError, ValidationError } from '../errors';
 import { makeProduct } from '../test-utils';
@@ -357,3 +358,95 @@ describe('list and history', () => {
     expect(() => service.history(999)).toThrow(NotFoundError);
   });
 });
+
+describe('purchases', () => {
+  it('keep tracking: the purchase freezes the card, which stays tracked', async () => {
+    const group = insertGroup(db, 'Pauper', t0);
+    const card = await service.create({ ...input, groupId: group.id }); // priced at 3800: the start price
+    const { purchase, item } = service.purchase(card.id, { pricePaidCents: 3500, quantity: 2, keepTracking: true });
+    expect(purchase).toMatchObject({
+      kind: 'card',
+      itemId: card.id,
+      name: 'Ragavan, Nimble Pilferer',
+      groupName: 'Pauper',
+      rules: { kind: 'card', expansionIds: [1], expansionNames: ['MH2'], languages: ['en'], minCondition: 'Near Mint', foil: false },
+      thresholdCents: 4000,
+      marketPriceCents: 3800,
+      startPriceCents: 3800,
+      pricePaidCents: 3500,
+      quantity: 2,
+      savedCents: 600,
+      purchasedAt: t0.toISOString(),
+    });
+    expect(purchase.listing?.expansionName).toBe('MH2');
+    expect(item).toMatchObject({ id: card.id, boughtQuantity: 2, alertState: 'below', startPriceCents: 3800 });
+  });
+
+  it('stop tracking: the card is removed, the purchase and its history stay', async () => {
+    const card = await service.create(input);
+    const { purchase, item } = service.purchase(card.id, { pricePaidCents: 3500, quantity: 1, keepTracking: false });
+    expect(item).toBeNull();
+    expect(getCard(db, card.id)).toBeNull();
+    expect(getPurchaseDetail(db, purchase.id)).toMatchObject({ itemId: null, savedCents: 300, points: [{ priceCents: 3800 }] });
+  });
+
+  it('changing the filters sets a new start price, from the new configuration', async () => {
+    const card = await service.create(input);
+    price = 9000;
+    const foil = await service.update(card.id, { ...update, foil: true });
+    expect(foil).toMatchObject({ startPriceCents: 9000, configVersion: 2 });
+    const { purchase } = service.purchase(card.id, { pricePaidCents: 8500, quantity: 1, keepTracking: true });
+    expect(purchase).toMatchObject({ savedCents: 500, rules: { foil: true } });
+  });
+
+  it('the copies needed change without re-pricing; left out, they are kept', async () => {
+    const card = await service.create(input);
+    expect(card.quantityNeeded).toBeNull();
+    expect(await service.update(card.id, { ...update, quantityNeeded: 4 })).toMatchObject({ quantityNeeded: 4, configVersion: 1 });
+    expect(await service.update(card.id, { ...update, thresholdCents: 3000 })).toMatchObject({ quantityNeeded: 4 });
+    expect(await service.update(card.id, { ...update, quantityNeeded: null })).toMatchObject({ quantityNeeded: null });
+    expect(ct.products).toHaveBeenCalledTimes(1);
+  });
+
+  it('the copies needed can be set when the card is created', async () => {
+    expect(await service.create({ ...input, quantityNeeded: 4 })).toMatchObject({ quantityNeeded: 4, boughtQuantity: 0 });
+  });
+
+  it('track again: same rules, target, group and history, linked to the purchase', async () => {
+    const group = insertGroup(db, 'Pauper', t0);
+    const card = await service.create({ ...input, groupId: group.id });
+    const { purchase } = service.purchase(card.id, { pricePaidCents: 3500, quantity: 1, keepTracking: false });
+    price = 3600;
+    const again = await service.restore(getPurchaseDetail(db, purchase.id)!);
+    expect(again).toMatchObject({
+      name: 'Ragavan, Nimble Pilferer',
+      groupId: group.id,
+      expansionIds: [1],
+      languages: ['en'],
+      foil: false,
+      thresholdCents: 4000,
+      lastPriceCents: 3600,
+      startPriceCents: 3800, // from the restored history
+      boughtQuantity: 1,
+    });
+    expect(listSnapshots(db, again.id).map((s) => s.priceCents)).toEqual([3800, 3600]);
+    expect(getPurchaseDetail(db, purchase.id)!.itemId).toBe(again.id);
+    // A second "track again" of the same purchase creates nothing.
+    await expect(service.restore(getPurchaseDetail(db, purchase.id)!)).rejects.toThrow(ValidationError);
+    expect(listCards(db)).toHaveLength(1);
+  });
+
+  it('track again without recorded rules → ValidationError', async () => {
+    const detail = { ...getPurchaseDetail(db, (await buyAndArchive()).id)!, rules: null };
+    await expect(service.restore(detail)).rejects.toThrow(ValidationError);
+  });
+
+  it('missing card → NotFoundError', () => {
+    expect(() => service.purchase(999, { pricePaidCents: 100, quantity: 1, keepTracking: true })).toThrow(NotFoundError);
+  });
+});
+
+async function buyAndArchive() {
+  const card = await service.create(input);
+  return service.purchase(card.id, { pricePaidCents: 3500, quantity: 1, keepTracking: false }).purchase;
+}

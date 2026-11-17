@@ -1,9 +1,9 @@
 <script setup lang="ts">
-import type { BulkResult, TrackedSealed, TrackedSealedRow } from '@ctzero/shared';
+import { type BulkResult, type PurchaseResult, type TrackedCard, type TrackedSealed, type TrackedSealedRow } from '@ctzero/shared';
 import Button from 'primevue/button';
 import { useConfirm } from 'primevue/useconfirm';
 import { useToast } from 'primevue/usetoast';
-import { ref, watch } from 'vue';
+import { computed, ref, watch } from 'vue';
 import { useCatalog } from '../catalog';
 import BulkBar from '../components/BulkBar.vue';
 import BulkThresholdDialog from '../components/BulkThresholdDialog.vue';
@@ -11,12 +11,14 @@ import ItemDrawer from '../components/ItemDrawer.vue';
 import SealedDialog from '../components/SealedDialog.vue';
 import TrackedList from '../components/TrackedList.vue';
 import { useOpenItem } from '../open-item';
+import { purchaseTotals, purchasesOfView } from '../purchase-summary';
+import { purchaseToast } from '../purchase-toast';
 import { BulkStoppedError } from '../bulk-cards';
 import { bulkSealed } from '../sealed-bulk';
 
 const toast = useToast();
 const confirm = useConfirm();
-const { sealed, groups, loading, loaded, reloadSealed } = useCatalog();
+const { sealed, groups, purchases, loading, loaded, reloadSealed, reloadPurchases } = useCatalog();
 
 // ---------- detail panel (?item=) ----------
 const { openId, openItem, open: openProduct, close: closeItem } = useOpenItem(sealed, () => loaded.sealed);
@@ -31,6 +33,16 @@ function onDeleted(item: TrackedSealedRow) {
   closeItem();
   void reloadSealed();
 }
+
+function onPurchased(result: PurchaseResult<TrackedCard | TrackedSealed>, keptTracking: boolean) {
+  toast.add(purchaseToast(result.purchase, keptTracking));
+  if (!keptTracking) closeItem();
+  void reloadSealed();
+  void reloadPurchases();
+}
+
+// Also counts products bought and then moved to the archive.
+const savings = computed(() => (purchases.value ? purchaseTotals(purchasesOfView(purchases.value.items, 'sealed')) : undefined));
 
 // ---------- add ----------
 const addVisible = ref(false);
@@ -101,6 +113,7 @@ function confirmBulkDelete() {
       :items="sealed"
       :loading="loading.sealed"
       :open-id="openId"
+      :savings="savings"
       empty-text='No tracked sealed products yet. Add one with "Add product".'
       @open="openProduct"
     />
@@ -111,7 +124,15 @@ function confirmBulkDelete() {
     </BulkBar>
   </div>
 
-  <ItemDrawer kind="sealed" :item="openItem" :groups="groups" @close="closeItem" @saved="onSaved($event as TrackedSealed)" @deleted="onDeleted($event as TrackedSealedRow)" />
+  <ItemDrawer
+    kind="sealed"
+    :item="openItem"
+    :groups="groups"
+    @close="closeItem"
+    @saved="onSaved($event as TrackedSealed)"
+    @deleted="onDeleted($event as TrackedSealedRow)"
+    @purchased="onPurchased"
+  />
   <SealedDialog v-model:visible="addVisible" @saved="onAdded" />
   <BulkThresholdDialog v-model:visible="thresholdVisible" kind="sealed" :items="selected" @done="onBulkDone" />
 </template>

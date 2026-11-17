@@ -1,6 +1,7 @@
 import { createRouter, createWebHistory } from 'vue-router';
 import CardsPage from './pages/CardsPage.vue';
 import ImportPage from './pages/ImportPage.vue';
+import PurchasesPage from './pages/PurchasesPage.vue';
 import SealedPage from './pages/SealedPage.vue';
 import SettingsPage from './pages/SettingsPage.vue';
 
@@ -21,6 +22,7 @@ export const router = createRouter({
     { path: '/cards/ungrouped', component: CardsPage, props: { scope: 'none' } },
     { path: '/groups/:id', component: CardsPage, props: (to) => ({ scope: String(to.params.id) }) },
     { path: '/sealed', component: SealedPage },
+    { path: '/purchases', component: PurchasesPage },
     { path: '/import', component: ImportPage },
     { path: '/settings', component: SettingsPage },
     { path: '/:pathMatch(.*)*', redirect: '/cards' },

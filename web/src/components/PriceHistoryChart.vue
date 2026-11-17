@@ -12,8 +12,11 @@ import { axisBounds, buildSeries, filterRange, formatDay, hasChartData, summariz
 import { themeColor } from '../theme';
 import SegmentedControl from './SegmentedControl.vue';
 
-/** `refreshKey` changes when the item is saved or re-priced: the history is fetched again. */
-const props = defineProps<{ kind: 'card' | 'sealed'; id: number; refreshKey: string }>();
+/**
+ * `refreshKey` changes when the item is saved or re-priced: the history is fetched again.
+ * `frozen`: a history given as is (a purchase), never fetched; its ranges end at its last point.
+ */
+const props = defineProps<{ kind: 'card' | 'sealed'; id: number; refreshKey: string; frozen?: PriceHistoryDto }>();
 
 const RANGES: { label: string; value: HistoryRange }[] = [
   { label: '30 days', value: '30d' },
@@ -29,15 +32,21 @@ const requests = latestRequest();
 watch(
   () => props.id,
   () => {
-    range.value = '90d';
+    range.value = props.frozen ? 'all' : '90d';
     history.value = null;
   },
+  { immediate: true },
 );
 
 watch(
-  [() => props.id, () => props.refreshKey],
+  [() => props.id, () => props.refreshKey, () => props.frozen],
   async ([id]) => {
     error.value = null;
+    if (props.frozen) {
+      history.value = props.frozen;
+      loading.value = false;
+      return;
+    }
     loading.value = history.value === null;
     const isLatest = requests.start();
     try {
@@ -52,7 +61,12 @@ watch(
   { immediate: true },
 );
 
-const points = computed(() => (history.value ? filterRange(history.value.points, range.value, new Date()) : []));
+/** The ranges end now, or at the last point of a frozen history. */
+const rangeEnd = computed(() => {
+  const last = props.frozen?.points.at(-1);
+  return last ? new Date(last.syncedAt) : new Date();
+});
+const points = computed(() => (history.value ? filterRange(history.value.points, range.value, rangeEnd.value) : []));
 const series = computed(() => buildSeries(points.value));
 const stats = computed(() => (history.value ? summarize(points.value, history.value.configVersion) : null));
 const enoughData = computed(() => hasChartData(series.value));

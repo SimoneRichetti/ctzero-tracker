@@ -9,6 +9,7 @@ import type {
 } from '@ctzero/shared';
 import { NotFoundError } from '../errors';
 import { transaction, type Db } from './db';
+import { boughtQuantityColumn } from './purchases-repo';
 
 type SqlValue = string | number | null;
 
@@ -32,6 +33,10 @@ interface CardRecord {
   alert_state: string | null;
   last_notified_price_cents: number | null;
   blueprints_resolved_at: string | null;
+  start_price_cents: number | null;
+  start_price_at: string | null;
+  quantity_needed: number | null;
+  bought_quantity: number;
   created_at: string;
   updated_at: string;
 }
@@ -46,9 +51,12 @@ export interface NewCard {
   foil: boolean | null;
   thresholdCents: number;
   groupId?: number | null;
+  quantityNeeded?: number | null;
 }
 
-export type CardPatch = Partial<Omit<TrackedCard, 'id' | 'createdAt' | 'updatedAt' | 'expansionNames'>>;
+export type CardPatch = Partial<
+  Omit<TrackedCard, 'id' | 'createdAt' | 'updatedAt' | 'expansionNames' | 'boughtQuantity' | 'startPriceCents' | 'startPriceAt'>
+>;
 
 const COLUMNS: Record<keyof CardPatch, string> = {
   name: 'name',
@@ -69,7 +77,24 @@ const COLUMNS: Record<keyof CardPatch, string> = {
   alertState: 'alert_state',
   lastNotifiedPriceCents: 'last_notified_price_cents',
   blueprintsResolvedAt: 'blueprints_resolved_at',
+  quantityNeeded: 'quantity_needed',
 };
+
+/** Cards with their start price and the copies bought. */
+const SELECT_CARDS = `SELECT t.*, ${startPriceColumns('price_snapshots', 'tracked_card_id')}, ${boughtQuantityColumn('card')}
+  FROM tracked_cards t`;
+
+/**
+ * The start price of each item (its table aliased `t`): the first price found for its current
+ * configuration, so changing which offers count also sets a new start price.
+ */
+export function startPriceColumns(snapshots: string, ownerColumn: string): string {
+  const first = (column: string) =>
+    `(SELECT s.${column} FROM ${snapshots} s
+      WHERE s.${ownerColumn} = t.id AND s.config_version = t.config_version AND s.price_cents IS NOT NULL
+      ORDER BY s.id LIMIT 1)`;
+  return `${first('price_cents')} AS start_price_cents, ${first('synced_at')} AS start_price_at`;
+}
 
 function encode(key: keyof CardPatch, value: unknown): SqlValue {
   if (value === null || value === undefined) return null;
@@ -108,18 +133,22 @@ function toCard(db: Db, r: CardRecord): TrackedCard {
     alertState: r.alert_state as AlertState | null,
     lastNotifiedPriceCents: r.last_notified_price_cents,
     blueprintsResolvedAt: r.blueprints_resolved_at,
+    startPriceCents: r.start_price_cents,
+    startPriceAt: r.start_price_at,
+    quantityNeeded: r.quantity_needed,
+    boughtQuantity: r.bought_quantity,
     createdAt: r.created_at,
     updatedAt: r.updated_at,
   };
 }
 
 export function listCards(db: Db): TrackedCard[] {
-  const rows = db.prepare('SELECT * FROM tracked_cards ORDER BY name COLLATE NOCASE, id').all() as unknown as CardRecord[];
+  const rows = db.prepare(`${SELECT_CARDS} ORDER BY t.name COLLATE NOCASE, t.id`).all() as unknown as CardRecord[];
   return rows.map((r) => toCard(db, r));
 }
 
 export function getCard(db: Db, id: number): TrackedCard | null {
-  const row = db.prepare('SELECT * FROM tracked_cards WHERE id = ?').get(id) as unknown as CardRecord | undefined;
+  const row = db.prepare(`${SELECT_CARDS} WHERE t.id = ?`).get(id) as unknown as CardRecord | undefined;
   return row ? toCard(db, row) : null;
 }
 
@@ -128,8 +157,9 @@ export function insertCard(db: Db, c: NewCard, now: Date = new Date()): TrackedC
   const res = db
     .prepare(
       `INSERT INTO tracked_cards
-        (name, scryfall_oracle_id, image_url, group_id, expansion_ids, languages, min_condition, foil, threshold_cents, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        (name, scryfall_oracle_id, image_url, group_id, expansion_ids, languages, min_condition, foil, threshold_cents,
+         quantity_needed, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     )
     .run(
       c.name,
@@ -141,6 +171,7 @@ export function insertCard(db: Db, c: NewCard, now: Date = new Date()): TrackedC
       c.minCondition,
       c.foil === null ? null : c.foil ? 1 : 0,
       c.thresholdCents,
+      c.quantityNeeded ?? null,
       iso,
       iso,
     );

@@ -265,7 +265,7 @@ function startOver() {
       <div class="deck-info">
         <span><strong>{{ parsed.lines.length }}</strong> cards recognised</span>
         <span v-if="parsed.errors.length" class="warn">{{ parsed.errors.length }} lines skipped</span>
-        <span>Moxfield, Archidekt and MTG Arena exports work. Quantities are ignored.</span>
+        <span>Moxfield, Archidekt and MTG Arena exports work. Quantities become the copies needed.</span>
       </div>
       <ul v-if="parsed.errors.length" class="error-list">
         <li v-for="e in parsed.errors" :key="e.lineNo">Line {{ e.lineNo }}: {{ e.text }}</li>
@@ -412,6 +412,19 @@ function startOver() {
             :invalid="data.thresholdCents !== null && !canInclude(data)"
             aria-label="Target"
             @update:model-value="(v: number | null) => onThresholdInput(data, v)"
+          />
+        </template>
+      </Column>
+      <Column header="Copies">
+        <template #body="{ data }">
+          <InputNumber
+            v-if="data.result"
+            v-model="data.quantityNeeded"
+            :min="1"
+            :max="999"
+            placeholder="—"
+            input-class="copies-input"
+            aria-label="Copies needed"
           />
         </template>
       </Column>
@@ -569,5 +582,8 @@ function startOver() {
 }
 :deep(.threshold-input) {
   width: 7rem;
+}
+:deep(.copies-input) {
+  width: 4rem;
 }
 </style>

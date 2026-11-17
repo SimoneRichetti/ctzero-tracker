@@ -16,6 +16,15 @@ export function dayLabel(iso: string, now: Date): string {
   return new Date(iso).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
 }
 
+/**
+ * The day for use inside a sentence: "today", "yesterday", "tomorrow", else the date after
+ * `datePrefix` (e.g. "on " → "on Oct 14").
+ */
+export function dayInText(iso: string, now: Date, datePrefix = ''): string {
+  const day = dayLabel(iso, now);
+  return day === 'Today' || day === 'Yesterday' || day === 'Tomorrow' ? day.toLowerCase() : `${datePrefix}${day}`;
+}
+
 /** "14:02" today, else "Oct 14, 14:02" (or "Yesterday, 14:02"). */
 export function formatWhen(iso: string, now: Date): string {
   const day = dayLabel(iso, now);
@@ -24,7 +33,6 @@ export function formatWhen(iso: string, now: Date): string {
 
 /** "Updated at 14:02", "Updated yesterday at 14:02", "Updated Oct 12 at 14:02". */
 export function formatAt(prefix: string, iso: string, now: Date): string {
-  const day = dayLabel(iso, now);
-  const when = day === 'Today' ? '' : ` ${day === 'Yesterday' || day === 'Tomorrow' ? day.toLowerCase() : day}`;
+  const when = dayLabel(iso, now) === 'Today' ? '' : ` ${dayInText(iso, now)}`;
   return `${prefix}${when} at ${formatClock(iso)}`;
 }

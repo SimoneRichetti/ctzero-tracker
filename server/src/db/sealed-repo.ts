@@ -1,7 +1,8 @@
 import type { AlertState, Language, Listing, SyncStatus, TrackedSealed } from '@ctzero/shared';
 import { NotFoundError } from '../errors';
-import { groupSnapshots, type Snapshot } from './cards-repo';
+import { groupSnapshots, startPriceColumns, type Snapshot } from './cards-repo';
 import type { Db } from './db';
+import { boughtQuantityColumn } from './purchases-repo';
 
 type SqlValue = string | number | null;
 
@@ -23,6 +24,10 @@ interface SealedRecord {
   last_error: string | null;
   alert_state: string | null;
   last_notified_price_cents: number | null;
+  start_price_cents: number | null;
+  start_price_at: string | null;
+  quantity_needed: number | null;
+  bought_quantity: number;
   created_at: string;
   updated_at: string;
 }
@@ -36,9 +41,12 @@ export interface NewSealed {
   imageUrl: string | null;
   languages: Language[];
   thresholdCents: number;
+  quantityNeeded?: number | null;
 }
 
-export type SealedPatch = Partial<Omit<TrackedSealed, 'id' | 'createdAt' | 'updatedAt'>>;
+export type SealedPatch = Partial<
+  Omit<TrackedSealed, 'id' | 'createdAt' | 'updatedAt' | 'boughtQuantity' | 'startPriceCents' | 'startPriceAt'>
+>;
 
 const COLUMNS: Record<keyof SealedPatch, string> = {
   name: 'name',
@@ -57,7 +65,12 @@ const COLUMNS: Record<keyof SealedPatch, string> = {
   lastError: 'last_error',
   alertState: 'alert_state',
   lastNotifiedPriceCents: 'last_notified_price_cents',
+  quantityNeeded: 'quantity_needed',
 };
+
+/** Products with their start price and the copies bought. */
+const SELECT_SEALED = `SELECT t.*, ${startPriceColumns('sealed_price_snapshots', 'tracked_sealed_id')}, ${boughtQuantityColumn('sealed')}
+  FROM tracked_sealed t`;
 
 function encode(key: keyof SealedPatch, value: unknown): SqlValue {
   if (value === null || value === undefined) return null;
@@ -84,18 +97,22 @@ function toSealed(r: SealedRecord): TrackedSealed {
     lastError: r.last_error,
     alertState: r.alert_state as AlertState | null,
     lastNotifiedPriceCents: r.last_notified_price_cents,
+    startPriceCents: r.start_price_cents,
+    startPriceAt: r.start_price_at,
+    quantityNeeded: r.quantity_needed,
+    boughtQuantity: r.bought_quantity,
     createdAt: r.created_at,
     updatedAt: r.updated_at,
   };
 }
 
 export function listSealed(db: Db): TrackedSealed[] {
-  const rows = db.prepare('SELECT * FROM tracked_sealed ORDER BY name COLLATE NOCASE, id').all() as unknown as SealedRecord[];
+  const rows = db.prepare(`${SELECT_SEALED} ORDER BY t.name COLLATE NOCASE, t.id`).all() as unknown as SealedRecord[];
   return rows.map(toSealed);
 }
 
 export function getSealed(db: Db, id: number): TrackedSealed | null {
-  const row = db.prepare('SELECT * FROM tracked_sealed WHERE id = ?').get(id) as unknown as SealedRecord | undefined;
+  const row = db.prepare(`${SELECT_SEALED} WHERE t.id = ?`).get(id) as unknown as SealedRecord | undefined;
   return row ? toSealed(row) : null;
 }
 
@@ -104,8 +121,9 @@ export function insertSealed(db: Db, s: NewSealed, now: Date = new Date()): Trac
   const res = db
     .prepare(
       `INSERT INTO tracked_sealed
-        (name, blueprint_id, expansion_id, expansion_name, category_name, image_url, languages, threshold_cents, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        (name, blueprint_id, expansion_id, expansion_name, category_name, image_url, languages, threshold_cents,
+         quantity_needed, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     )
     .run(
       s.name,
@@ -116,6 +134,7 @@ export function insertSealed(db: Db, s: NewSealed, now: Date = new Date()): Trac
       s.imageUrl,
       JSON.stringify(s.languages),
       s.thresholdCents,
+      s.quantityNeeded ?? null,
       iso,
       iso,
     );

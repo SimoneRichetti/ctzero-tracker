@@ -2,6 +2,9 @@ import {
   thresholdPresets,
   type PreviewResult,
   type PriceHistoryDto,
+  type PurchaseDetail,
+  type PurchaseInput,
+  type PurchaseResult,
   type SealedInput,
   type SealedPreview,
   type SealedUpdate,
@@ -22,7 +25,8 @@ import {
   listSealedSnapshots,
   updateSealed,
 } from '../db/sealed-repo';
-import { NotFoundError, errorMessage } from '../errors';
+import { getPurchase, linkPurchase, recordPurchase } from '../db/purchases-repo';
+import { NotFoundError, ValidationError, errorMessage } from '../errors';
 import { priceSealed } from '../pricing/sealed-pricer';
 import { computeTrend, trendSince } from '../pricing/trend';
 
@@ -78,9 +82,32 @@ export class SealedService {
     const product = await this.deps.catalog.sealedProduct(input.blueprintId, input.expansionId);
     const created = insertSealed(
       this.deps.db,
-      { ...product, languages: input.languages, thresholdCents: input.thresholdCents },
+      { ...product, languages: input.languages, thresholdCents: input.thresholdCents, quantityNeeded: input.quantityNeeded ?? null },
       this.now(),
     );
+    return this.refreshSilently(created);
+  }
+
+  /**
+   * Tracks again the product of an archived purchase: same languages and target, with the price
+   * history copied back. The purchase is linked to the new product.
+   */
+  async restore(purchase: PurchaseDetail): Promise<TrackedSealed> {
+    const { db } = this.deps;
+    const rules = purchase.rules;
+    if (rules?.kind !== 'sealed' || purchase.thresholdCents === null) {
+      throw new ValidationError('The rules of this purchase were not recorded: add the product again');
+    }
+    const product = await this.deps.catalog.sealedProduct(rules.blueprintId, rules.expansionId);
+    const thresholdCents = purchase.thresholdCents;
+    const created = transaction(db, () => {
+      const item = insertSealed(db, { ...product, languages: rules.languages, thresholdCents }, this.now());
+      for (const p of purchase.points) {
+        insertSealedSnapshot(db, { sealedId: item.id, configVersion: item.configVersion, syncedAt: p.syncedAt, priceCents: p.priceCents });
+      }
+      if (!linkPurchase(db, purchase.id, 'sealed', item.id)) throw new ValidationError('This purchase is already tracked again');
+      return item;
+    });
     return this.refreshSilently(created);
   }
 
@@ -90,11 +117,12 @@ export class SealedService {
     if (!item) throw new NotFoundError('Sealed product not found');
     const now = this.now();
 
+    const needed = input.quantityNeeded !== undefined ? { quantityNeeded: input.quantityNeeded } : {};
     if (sameSet(item.languages, input.languages)) {
       return updateSealed(
         db,
         id,
-        { thresholdCents: input.thresholdCents, ...evaluateSilently(item.lastPriceCents, input.thresholdCents) },
+        { thresholdCents: input.thresholdCents, ...evaluateSilently(item.lastPriceCents, input.thresholdCents), ...needed },
         now,
       );
     }
@@ -105,6 +133,7 @@ export class SealedService {
       {
         languages: input.languages,
         thresholdCents: input.thresholdCents,
+        ...needed,
         configVersion: item.configVersion + 1,
         lastPriceCents: null,
         lastListing: null,
@@ -121,6 +150,29 @@ export class SealedService {
 
   delete(id: number): void {
     if (!deleteSealed(this.deps.db, id)) throw new NotFoundError('Sealed product not found');
+  }
+
+  /**
+   * Records a purchase of the product in the archive, as it is now. Without `keepTracking`
+   * the product then stops being tracked (the purchase outlives it).
+   */
+  purchase(id: number, input: PurchaseInput): PurchaseResult<TrackedSealed> {
+    const { db } = this.deps;
+    return transaction(db, () => {
+      const item = getSealed(db, id);
+      if (!item) throw new NotFoundError('Sealed product not found');
+      const rules = {
+        kind: 'sealed' as const,
+        blueprintId: item.blueprintId,
+        expansionId: item.expansionId,
+        expansionName: item.expansionName,
+        categoryName: item.categoryName,
+        languages: item.languages,
+      };
+      const recorded = recordPurchase(db, 'sealed', { ...item, groupName: null, rules }, input, this.now());
+      if (!input.keepTracking) deleteSealed(db, id);
+      return { purchase: getPurchase(db, recorded.id)!, item: input.keepTracking ? getSealed(db, id) : null };
+    });
   }
 
   /**

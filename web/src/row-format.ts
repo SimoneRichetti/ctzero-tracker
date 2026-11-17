@@ -1,4 +1,4 @@
-import { CONDITION_ABBR, formatEuro, type Condition, type Listing, type TrackedCard, type TrackedSealed } from '@ctzero/shared';
+import { CONDITION_ABBR, formatEuro, type Condition, type Listing, type PurchaseRecord, type TrackedCard, type TrackedSealed } from '@ctzero/shared';
 import type { PricedItem } from './card-status';
 
 function languageList(codes: string[]): string {
@@ -47,6 +47,31 @@ export function gapSentence(item: Pick<PricedItem, 'lastPriceCents' | 'threshold
   if (!gap) return 'The alert fires as soon as an offer is at or under it';
   if (gap.under) return `${gap.pct.toFixed(1)}% under your target`;
   return `${formatEuro(item.lastPriceCents! - item.thresholdCents)} to go (${gap.pct.toFixed(1)}%)`;
+}
+
+/** How the current price compares to the start price, e.g. "now 12.5% lower". */
+export function sinceStart(item: Pick<TrackedCard, 'startPriceCents' | 'lastPriceCents'>): string | null {
+  const start = item.startPriceCents;
+  const now = item.lastPriceCents;
+  if (start === null || now === null) return null;
+  if (now === start) return 'unchanged since';
+  const pct = round1(Math.abs(((now - start) / start) * 100));
+  return `now ${pct.toFixed(1)}% ${now < start ? 'lower' : 'higher'}`;
+}
+
+/** "Saved €3.00", "Paid €0.50 more", "Saved nothing"; null if the start price is unknown. */
+export function savingText(savedCents: number | null): string | null {
+  if (savedCents === null) return null;
+  if (savedCents === 0) return 'Saved nothing';
+  return savedCents > 0 ? `Saved ${formatEuro(savedCents)}` : `Paid ${formatEuro(-savedCents)} more`;
+}
+
+/** The rules a purchase was made with, as one line (group first for cards); '' when not recorded. */
+export function purchaseMetaLine(p: Pick<PurchaseRecord, 'rules' | 'groupName'>): string {
+  const r = p.rules;
+  if (!r) return '';
+  const line = r.kind === 'card' ? cardMetaLine(r) : sealedMetaLine(r);
+  return p.groupName ? `${p.groupName} · ${line}` : line;
 }
 
 export type ChangeTone = 'down' | 'up' | 'flat' | 'none';

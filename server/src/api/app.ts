@@ -8,6 +8,7 @@ import {
   cardUpdateSchema,
   groupInputSchema,
   importResolveSchema,
+  purchaseInputSchema,
   sealedInputSchema,
   sealedPreviewSchema,
   sealedUpdateSchema,
@@ -18,6 +19,8 @@ import {
   type HealthDto,
   type ImportResolveResult,
   type PriceHistoryDto,
+  type PurchaseDetail,
+  type PurchasesDto,
   type SealedProduct,
   type SyncStatusDto,
 } from '@ctzero/shared';
@@ -36,14 +39,16 @@ import { getSettings, saveSettings } from '../db/settings-repo';
 import { NotFoundError, ValidationError } from '../errors';
 import type { ImportService } from '../import/import-service';
 import type { Scheduler } from '../scheduler/scheduler';
+import type { PurchaseService } from '../purchases/purchase-service';
 import type { SealedService } from '../sealed/sealed-service';
 import type { SyncService } from '../sync/sync-service';
 
 export interface AppDeps {
   db: Db;
-  cards: Pick<CardService, 'list' | 'create' | 'update' | 'delete' | 'preview' | 'bulk' | 'history'>;
+  cards: Pick<CardService, 'list' | 'create' | 'update' | 'delete' | 'preview' | 'bulk' | 'history' | 'purchase'>;
   importer: Pick<ImportService, 'resolve'>;
-  sealed: Pick<SealedService, 'list' | 'create' | 'update' | 'delete' | 'preview' | 'history'>;
+  sealed: Pick<SealedService, 'list' | 'create' | 'update' | 'delete' | 'preview' | 'history' | 'purchase'>;
+  purchases: Pick<PurchaseService, 'list' | 'get' | 'delete' | 'trackAgain'>;
   sealedCatalog: Pick<SealedCatalog, 'listExpansions' | 'sealedProducts' | 'sealedProduct'>;
   sync: Pick<SyncService, 'start'>;
   scheduler: Pick<Scheduler, 'getNextRunAt' | 'reschedule'>;
@@ -103,6 +108,22 @@ export function buildApp(deps: AppDeps): FastifyInstance {
     return reply.status(204).send();
   });
 
+  app.post('/api/cards/:id/purchases', async (req, reply) => {
+    const { id } = idParams.parse(req.params);
+    return reply.status(201).send(deps.cards.purchase(id, purchaseInputSchema.parse(req.body)));
+  });
+
+  app.get('/api/purchases', async (): Promise<PurchasesDto> => deps.purchases.list());
+
+  app.get('/api/purchases/:id', async (req): Promise<PurchaseDetail> => deps.purchases.get(idParams.parse(req.params).id));
+
+  app.delete('/api/purchases/:id', async (req, reply) => {
+    deps.purchases.delete(idParams.parse(req.params).id);
+    return reply.status(204).send();
+  });
+
+  app.post('/api/purchases/:id/track-again', async (req) => deps.purchases.trackAgain(idParams.parse(req.params).id));
+
   app.post('/api/cards/preview', async (req) => deps.cards.preview(cardFiltersSchema.parse(req.body)));
 
   app.post('/api/cards/bulk', async (req) => deps.cards.bulk(bulkCardsSchema.parse(req.body)));
@@ -157,6 +178,11 @@ export function buildApp(deps: AppDeps): FastifyInstance {
     const { id } = idParams.parse(req.params);
     deps.sealed.delete(id);
     return reply.status(204).send();
+  });
+
+  app.post('/api/sealed/:id/purchases', async (req, reply) => {
+    const { id } = idParams.parse(req.params);
+    return reply.status(201).send(deps.sealed.purchase(id, purchaseInputSchema.parse(req.body)));
   });
 
   app.post('/api/sealed/preview', async (req) => deps.sealed.preview(sealedPreviewSchema.parse(req.body)));
