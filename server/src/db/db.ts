@@ -239,6 +239,9 @@ export const MIGRATIONS: string[] = [
   CREATE INDEX price_snapshots_card_version ON price_snapshots(tracked_card_id, config_version);
   CREATE INDEX sealed_price_snapshots_sealed_version ON sealed_price_snapshots(tracked_sealed_id, config_version);
   `,
+  `
+  ALTER TABLE tracked_cards ADD COLUMN excluded_expansions TEXT NOT NULL DEFAULT '[]';
+  `,
 ];
 
 export function openDb(path: string): Db {

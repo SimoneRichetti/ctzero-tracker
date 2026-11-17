@@ -88,7 +88,15 @@ const rules = computed(() => {
   const rows =
     r.kind === 'card'
       ? [
-          { label: 'Expansions', value: r.expansionNames.length > 0 ? r.expansionNames.join(', ') : 'Any expansion' },
+          {
+            label: 'Expansions',
+            value:
+              r.expansionNames.length > 0
+                ? r.expansionNames.join(', ')
+                : r.excludedExpansions?.length
+                  ? `Any expansion except ${r.excludedExpansions.map((e) => e.expansionName).join(', ')}`
+                  : 'Any expansion',
+          },
           { label: 'Languages', value: languages },
           { label: 'Minimum condition', value: r.minCondition },
           { label: 'Finish', value: r.foil === null ? 'Any finish' : r.foil ? 'Foil' : 'Non-foil' },

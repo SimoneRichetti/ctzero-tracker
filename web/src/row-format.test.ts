@@ -4,19 +4,26 @@ import { cardMetaLine, cardTraderUrl, formatChange, gapSentence, largeImageUrl, 
 
 describe('cardMetaLine', () => {
   it('describes the matching rules', () => {
-    expect(cardMetaLine({ expansionNames: [], languages: ['en', 'it'], minCondition: 'Near Mint', foil: false })).toBe(
+    expect(cardMetaLine({ excludedExpansions: [], expansionNames: [], languages: ['en', 'it'], minCondition: 'Near Mint', foil: false })).toBe(
       'Any expansion · EN, IT · ≥ NM · Non-foil',
     );
-    expect(cardMetaLine({ expansionNames: ['Alliances'], languages: [], minCondition: 'Played', foil: null })).toBe(
+    expect(cardMetaLine({ excludedExpansions: [], expansionNames: ['Alliances'], languages: [], minCondition: 'Played', foil: null })).toBe(
       'Alliances · Any language · ≥ PL · Any finish',
     );
   });
 
+  it('mentions the excluded expansions of "any expansion" cards', () => {
+    const base = { expansionNames: [], languages: [], minCondition: 'Mint' as const, foil: null };
+    const sld = { expansionId: 7, expansionName: 'Secret Lair' };
+    expect(cardMetaLine({ ...base, excludedExpansions: [sld] })).toMatch(/^Any expansion except Secret Lair ·/);
+    expect(cardMetaLine({ ...base, excludedExpansions: [sld, { expansionId: 8, expansionName: '30th' }] })).toMatch(/^Any expansion except 2 ·/);
+  });
+
   it('shortens long expansion lists', () => {
-    expect(cardMetaLine({ expansionNames: ['A', 'B', 'C'], languages: [], minCondition: 'Mint', foil: true })).toBe(
+    expect(cardMetaLine({ excludedExpansions: [], expansionNames: ['A', 'B', 'C'], languages: [], minCondition: 'Mint', foil: true })).toBe(
       'A, +2 more · Any language · ≥ M · Foil',
     );
-    expect(cardMetaLine({ expansionNames: ['A', 'B'], languages: [], minCondition: 'Mint', foil: true })).toMatch(/^A, B ·/);
+    expect(cardMetaLine({ excludedExpansions: [], expansionNames: ['A', 'B'], languages: [], minCondition: 'Mint', foil: true })).toMatch(/^A, B ·/);
   });
 });
 

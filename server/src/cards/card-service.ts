@@ -7,6 +7,7 @@ import {
   type CardFilters,
   type CardInput,
   type CardUpdate,
+  type ExpansionRef,
   type PreviewResult,
   type PriceHistoryDto,
   type PurchaseDetail,
@@ -16,7 +17,7 @@ import {
   type TrackedCardRow,
 } from '@ctzero/shared';
 import { evaluateSilently } from '../alerts/rules';
-import type { Catalog } from '../catalog/catalog';
+import type { CardLookup, Catalog } from '../catalog/catalog';
 import type { CardTraderClient } from '../clients/cardtrader';
 import {
   deleteCard,
@@ -47,9 +48,23 @@ function sameSet<T>(a: T[], b: T[]): boolean {
   return a.length === b.length && a.every((x) => b.includes(x));
 }
 
+type ExpansionFilters = Pick<CardFilters, 'expansionIds' | 'excludedExpansionIds'>;
+
+/** Exclusions only apply to "any expansion" cards. */
+function excludedIds(f: ExpansionFilters): number[] {
+  return f.expansionIds.length > 0 ? [] : f.excludedExpansionIds;
+}
+
+/** The excluded expansions the card actually exists in, with their names. */
+function excludedOf(lookup: CardLookup, f: ExpansionFilters): ExpansionRef[] {
+  const ids = new Set(excludedIds(f));
+  return lookup.printings.filter((p) => ids.has(p.expansionId)).map(({ expansionId, expansionName }) => ({ expansionId, expansionName }));
+}
+
 function filtersChanged(card: TrackedCard, input: CardUpdate): boolean {
   return (
     !sameSet(card.expansionIds, input.expansionIds) ||
+    !sameSet(card.excludedExpansions.map((e) => e.expansionId), excludedIds(input)) ||
     !sameSet(card.languages, input.languages) ||
     card.minCondition !== input.minCondition ||
     card.foil !== input.foil
@@ -87,7 +102,7 @@ export class CardService {
 
   async preview(f: CardFilters): Promise<PreviewResult> {
     const lookup = await this.deps.catalog.lookup(f.name);
-    const blueprints = await this.deps.catalog.resolveBlueprints(lookup, f.expansionIds);
+    const blueprints = await this.deps.catalog.resolveBlueprints(lookup, f.expansionIds, excludedIds(f));
     const result = await priceCard(this.deps.ct, blueprints, f);
     const priceCents = result.status === 'ok' ? result.priceCents : null;
     return {
@@ -116,6 +131,7 @@ export class CardService {
       {
         name: purchase.name,
         expansionIds: rules.expansionIds,
+        excludedExpansionIds: (rules.excludedExpansions ?? []).map((e) => e.expansionId),
         languages: rules.languages,
         minCondition: rules.minCondition,
         foil: rules.foil,
@@ -137,7 +153,8 @@ export class CardService {
     const { db, catalog } = this.deps;
     this.assertGroup(input.groupId);
     const lookup = await catalog.lookup(input.name);
-    const blueprints = await catalog.resolveBlueprints(lookup, input.expansionIds);
+    const excludedExpansions = excludedOf(lookup, input);
+    const blueprints = await catalog.resolveBlueprints(lookup, input.expansionIds, excludedIds(input));
     const now = this.now();
     const card = transaction(db, () => {
       // Checked again: the group may have been deleted while Scryfall was being called.
@@ -149,6 +166,7 @@ export class CardService {
           scryfallOracleId: lookup.oracleId,
           imageUrl: lookup.imageUrl,
           expansionIds: input.expansionIds,
+          excludedExpansions,
           languages: input.languages,
           minCondition: input.minCondition,
           foil: input.foil,
@@ -177,22 +195,31 @@ export class CardService {
     };
     const now = this.now();
 
-    if (!filtersChanged(card, input)) {
-      return updateCard(
-        db,
-        id,
-        {
-          thresholdCents: input.thresholdCents,
-          ...evaluateSilently(card.lastPriceCents, input.thresholdCents),
-          ...groupPatch,
-        },
-        now,
-      );
-    }
+    // Same filters: only threshold and group. The group is checked again, an await may have happened.
+    const keepFilters = () =>
+      transaction(db, () => {
+        this.assertGroup(input.groupId);
+        return updateCard(
+          db,
+          id,
+          {
+            thresholdCents: input.thresholdCents,
+            ...evaluateSilently(card.lastPriceCents, input.thresholdCents),
+            ...groupPatch,
+          },
+          now,
+        );
+      });
+
+    if (!filtersChanged(card, input)) return keepFilters();
 
     // Resolve blueprints first: if that fails, the card is left unchanged.
     const lookup = await catalog.lookup(card.name);
-    const blueprints = await catalog.resolveBlueprints(lookup, input.expansionIds);
+    const excludedExpansions = excludedOf(lookup, input);
+    // Excluding expansions the card doesn't exist in changes nothing (e.g. one exclusion applied to many cards).
+    const effective = { ...input, excludedExpansionIds: excludedExpansions.map((e) => e.expansionId) };
+    if (!filtersChanged(card, effective)) return keepFilters();
+    const blueprints = await catalog.resolveBlueprints(lookup, input.expansionIds, excludedIds(input));
     const updated = transaction(db, () => {
       this.assertGroup(input.groupId);
       replaceBlueprints(db, id, blueprints);
@@ -201,6 +228,7 @@ export class CardService {
         id,
         {
           expansionIds: input.expansionIds,
+          excludedExpansions,
           languages: input.languages,
           minCondition: input.minCondition,
           foil: input.foil,
@@ -240,6 +268,7 @@ export class CardService {
         kind: 'card' as const,
         expansionIds: card.expansionIds,
         expansionNames: card.expansionNames,
+        excludedExpansions: card.excludedExpansions,
         languages: card.languages,
         minCondition: card.minCondition,
         foil: card.foil,

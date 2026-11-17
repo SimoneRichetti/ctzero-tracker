@@ -27,6 +27,8 @@ export interface TrackedCard {
   expansionIds: number[];
   /** Names of the selected expansions (empty if "any"). */
   expansionNames: string[];
+  /** Expansions whose printings are ignored; only used when `expansionIds` is [] (any). */
+  excludedExpansions: ExpansionRef[];
   /** [] = any language. */
   languages: Language[];
   minCondition: Condition;
@@ -60,6 +62,8 @@ export interface CardPurchaseRules {
   kind: 'card';
   expansionIds: number[];
   expansionNames: string[];
+  /** Expansions ignored with "any expansion"; absent in purchases archived before exclusions existed. */
+  excludedExpansions?: ExpansionRef[];
   languages: Language[];
   minCondition: Condition;
   foil: boolean | null;
@@ -116,6 +120,11 @@ export interface PurchaseDetail extends PurchaseRecord {
 export interface PurchasesDto {
   /** Newest first. */
   items: PurchaseRecord[];
+}
+
+export interface ExpansionRef {
+  expansionId: number;
+  expansionName: string;
 }
 
 /** Result of buying an item: `item` is null when its tracking stopped. */

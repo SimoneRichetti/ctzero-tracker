@@ -258,6 +258,7 @@ describe('cards-repo', () => {
       name: 'Lightning Bolt',
       expansionIds: [1, 2],
       expansionNames: [],
+      excludedExpansions: [],
       languages: ['en'],
       foil: false,
       configVersion: 1,
