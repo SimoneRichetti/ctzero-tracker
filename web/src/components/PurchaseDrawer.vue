@@ -8,7 +8,7 @@ import { useConfirm } from 'primevue/useconfirm';
 import { computed, ref, watch } from 'vue';
 import { api } from '../api';
 import { latestRequest } from '../latest-request';
-import { largeImageUrl, listingLine } from '../row-format';
+import { anyExpansion, largeImageUrl, listingLine } from '../row-format';
 import { dayInText } from '../time-format';
 import PriceHistoryChart from './PriceHistoryChart.vue';
 
@@ -90,12 +90,7 @@ const rules = computed(() => {
       ? [
           {
             label: 'Expansions',
-            value:
-              r.expansionNames.length > 0
-                ? r.expansionNames.join(', ')
-                : r.excludedExpansions?.length
-                  ? `Any expansion except ${r.excludedExpansions.map((e) => e.expansionName).join(', ')}`
-                  : 'Any expansion',
+            value: r.expansionNames.length > 0 ? r.expansionNames.join(', ') : anyExpansion(r.excludedExpansions ?? [], true),
           },
           { label: 'Languages', value: languages },
           { label: 'Minimum condition', value: r.minCondition },

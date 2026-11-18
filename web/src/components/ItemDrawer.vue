@@ -152,21 +152,8 @@ const expansionOptions = computed(() => {
 const excludedOptions = computed(() => lookup.value?.printings ?? card.value?.excludedExpansions ?? []);
 const formIds = (key: 'expansionIds' | 'excludedExpansionIds') =>
   computed({ get: () => form.value[key], set: (v: number[]) => (form.value[key] = v) });
-const printingLabel = (p: { expansionName: string }) => p.expansionName;
-const printingId = (p: { expansionId: number }) => p.expansionId;
-const named = (list: { expansionId: number; expansionName: string }[]) => list.map((p) => ({ id: p.expansionId, name: p.expansionName }));
-const namedExpansions = computed(() => named(expansionOptions.value));
-const namedExcluded = computed(() => named(excludedOptions.value));
-const expansionSelect = useAdditiveSelectAll(formIds('expansionIds'), expansionOptions, printingLabel, printingId);
-const excludedSelect = useAdditiveSelectAll(formIds('excludedExpansionIds'), excludedOptions, printingLabel, printingId);
-
-// Exclusions only make sense with "any expansion": picking expansions drops them.
-watch(
-  () => form.value.expansionIds.length,
-  (n) => {
-    if (n > 0 && form.value.excludedExpansionIds.length > 0) form.value.excludedExpansionIds = [];
-  },
-);
+const expansionSelect = useAdditiveSelectAll(formIds('expansionIds'), expansionOptions, 'expansionName', 'expansionId');
+const excludedSelect = useAdditiveSelectAll(formIds('excludedExpansionIds'), excludedOptions, 'expansionName', 'expansionId');
 
 const visible = computed({
   get: () => props.item !== null,
@@ -251,7 +238,8 @@ async function save() {
       props.kind === 'card'
         ? await api.put<TrackedCard>(`/api/cards/${item.id}`, {
             expansionIds: f.expansionIds,
-            excludedExpansionIds: f.excludedExpansionIds,
+            // Exclusions only apply to "any expansion": kept while hidden, in case the expansions are removed again.
+            excludedExpansionIds: f.expansionIds.length > 0 ? [] : f.excludedExpansionIds,
             languages: f.languages,
             minCondition: f.minCondition,
             foil: f.foil,
@@ -554,9 +542,7 @@ function remove() {
               <MultiSelect
                 v-model="form.expansionIds"
                 input-id="drawer-expansions"
-                :select-all="expansionSelect.selectAll"
-                @filter="expansionSelect.onFilter"
-                @selectall-change="expansionSelect.onSelectAllChange"
+                v-bind="expansionSelect"
                 :options="expansionOptions"
                 option-label="expansionName"
                 option-value="expansionId"
@@ -568,15 +554,19 @@ function remove() {
                 class="rule-control"
               />
             </div>
-            <SelectedExpansions v-model="form.expansionIds" :options="namedExpansions" class="rule-selection" />
+            <SelectedExpansions
+              v-model="form.expansionIds"
+              :options="expansionOptions"
+              option-label="expansionName"
+              option-value="expansionId"
+              class="rule-selection"
+            />
             <div v-if="form.expansionIds.length === 0" class="rule">
               <label for="drawer-excluded">Except</label>
               <MultiSelect
                 v-model="form.excludedExpansionIds"
                 input-id="drawer-excluded"
-                :select-all="excludedSelect.selectAll"
-                @filter="excludedSelect.onFilter"
-                @selectall-change="excludedSelect.onSelectAllChange"
+                v-bind="excludedSelect"
                 :options="excludedOptions"
                 option-label="expansionName"
                 option-value="expansionId"
@@ -591,7 +581,9 @@ function remove() {
             <SelectedExpansions
               v-if="form.expansionIds.length === 0"
               v-model="form.excludedExpansionIds"
-              :options="namedExcluded"
+              :options="excludedOptions"
+              option-label="expansionName"
+              option-value="expansionId"
               class="rule-selection"
             />
             <div class="rule">

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { Listing } from '@ctzero/shared';
-import { cardMetaLine, cardTraderUrl, formatChange, gapSentence, largeImageUrl, listingLine, savingText, sealedMetaLine, sinceStart, targetGap } from './row-format';
+import { anyExpansion, cardMetaLine, cardTraderUrl, formatChange, gapSentence, largeImageUrl, listingLine, savingText, sealedMetaLine, sinceStart, targetGap } from './row-format';
 
 describe('cardMetaLine', () => {
   it('describes the matching rules', () => {
@@ -16,7 +16,16 @@ describe('cardMetaLine', () => {
     const base = { expansionNames: [], languages: [], minCondition: 'Mint' as const, foil: null };
     const sld = { expansionId: 7, expansionName: 'Secret Lair' };
     expect(cardMetaLine({ ...base, excludedExpansions: [sld] })).toMatch(/^Any expansion except Secret Lair ·/);
-    expect(cardMetaLine({ ...base, excludedExpansions: [sld, { expansionId: 8, expansionName: '30th' }] })).toMatch(/^Any expansion except 2 ·/);
+    expect(cardMetaLine({ ...base, excludedExpansions: [sld, { expansionId: 8, expansionName: '30th' }] })).toMatch(/^Any expansion except 2 expansions ·/);
+  });
+
+  it('anyExpansion lists every exclusion when asked for the full text', () => {
+    const two = [
+      { expansionId: 7, expansionName: 'Secret Lair' },
+      { expansionId: 8, expansionName: '30th' },
+    ];
+    expect(anyExpansion(two, true)).toBe('Any expansion except Secret Lair, 30th');
+    expect(anyExpansion([], true)).toBe('Any expansion');
   });
 
   it('shortens long expansion lists', () => {

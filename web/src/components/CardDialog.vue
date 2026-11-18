@@ -52,11 +52,8 @@ const saving = ref(false);
 const conditionOptions = [...CONDITIONS];
 const languageOptions = LANGUAGES.map((code) => ({ code, label: LANGUAGE_LABELS[code] }));
 const expansionOptions = computed(() => lookup.value?.printings ?? []);
-const printingLabel = (p: { expansionName: string }) => p.expansionName;
-const printingId = (p: { expansionId: number }) => p.expansionId;
-const namedPrintings = computed(() => expansionOptions.value.map((p) => ({ id: p.expansionId, name: p.expansionName })));
-const expansionSelect = useAdditiveSelectAll(expansionIds, expansionOptions, printingLabel, printingId);
-const excludedSelect = useAdditiveSelectAll(excludedExpansionIds, expansionOptions, printingLabel, printingId);
+const expansionSelect = useAdditiveSelectAll(expansionIds, expansionOptions, 'expansionName', 'expansionId');
+const excludedSelect = useAdditiveSelectAll(excludedExpansionIds, expansionOptions, 'expansionName', 'expansionId');
 const canSave = computed(() => lookup.value !== null && thresholdEuro.value !== null && euroToCents(thresholdEuro.value) >= MIN_THRESHOLD_CENTS);
 
 watch(visible, (open) => {
@@ -67,14 +64,6 @@ watch(visible, (open) => {
 watch([expansionIds, excludedExpansionIds, languages, minCondition, foil], () => {
   preview.value = null;
 });
-
-// Exclusions only make sense with "any expansion": picking expansions drops them.
-watch(
-  () => expansionIds.value.length,
-  (n) => {
-    if (n > 0 && excludedExpansionIds.value.length > 0) excludedExpansionIds.value = [];
-  },
-);
 
 // If the name is changed after selection, the loaded card is no longer valid.
 watch(name, (value) => {
@@ -132,7 +121,8 @@ async function loadLookup(cardName: string) {
 function filters() {
   return {
     expansionIds: expansionIds.value,
-    excludedExpansionIds: excludedExpansionIds.value,
+    // Exclusions only apply to "any expansion": kept while hidden, in case the expansions are removed again.
+    excludedExpansionIds: expansionIds.value.length > 0 ? [] : excludedExpansionIds.value,
     languages: languages.value,
     minCondition: minCondition.value,
     foil: foil.value,
@@ -206,9 +196,7 @@ async function save() {
           <MultiSelect
             v-model="expansionIds"
             input-id="expansions"
-            :select-all="expansionSelect.selectAll"
-            @filter="expansionSelect.onFilter"
-            @selectall-change="expansionSelect.onSelectAllChange"
+            v-bind="expansionSelect"
             :options="expansionOptions"
             option-label="expansionName"
             option-value="expansionId"
@@ -218,16 +206,14 @@ async function save() {
             filter
             fluid
           />
-          <SelectedExpansions v-model="expansionIds" :options="namedPrintings" />
+          <SelectedExpansions v-model="expansionIds" :options="expansionOptions" option-label="expansionName" option-value="expansionId" />
         </div>
         <div v-if="expansionIds.length === 0" class="field">
           <label for="excluded-expansions">Except expansions</label>
           <MultiSelect
             v-model="excludedExpansionIds"
             input-id="excluded-expansions"
-            :select-all="excludedSelect.selectAll"
-            @filter="excludedSelect.onFilter"
-            @selectall-change="excludedSelect.onSelectAllChange"
+            v-bind="excludedSelect"
             :options="expansionOptions"
             option-label="expansionName"
             option-value="expansionId"
@@ -237,7 +223,7 @@ async function save() {
             filter
             fluid
           />
-          <SelectedExpansions v-model="excludedExpansionIds" :options="namedPrintings" />
+          <SelectedExpansions v-model="excludedExpansionIds" :options="expansionOptions" option-label="expansionName" option-value="expansionId" />
         </div>
         <div class="field">
           <label for="languages">Languages</label>
