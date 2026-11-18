@@ -12,9 +12,11 @@ function finish(foil: boolean | null): string {
 /** One-line summary of which offers count for a card, e.g. "Any expansion · EN, IT · ≥ NM · Non-foil". */
 type MetaFields = 'expansionNames' | 'excludedExpansions' | 'languages' | 'minCondition' | 'foil';
 
-function anyExpansion(excluded: TrackedCard['excludedExpansions']): string {
+/** "Any expansion", with its exclusions: all their names when `full`, else a count from two on. */
+export function anyExpansion(excluded: TrackedCard['excludedExpansions'], full = false): string {
   if (excluded.length === 0) return 'Any expansion';
-  return excluded.length === 1 ? `Any expansion except ${excluded[0]!.expansionName}` : `Any expansion except ${excluded.length}`;
+  const names = excluded.map((e) => e.expansionName);
+  return `Any expansion except ${full || names.length === 1 ? names.join(', ') : `${names.length} expansions`}`;
 }
 
 export function cardMetaLine(card: Pick<TrackedCard, MetaFields>): string {

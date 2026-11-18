@@ -195,16 +195,19 @@ export class CardService {
     };
     const now = this.now();
 
-    // Same filters: only threshold and group. The group is checked again, an await may have happened.
+    // Same filters: only threshold and group. Card and group are read again, an await may have happened
+    // (a sync that stored a new price and alert state in the meantime must not be overwritten).
     const keepFilters = () =>
       transaction(db, () => {
         this.assertGroup(input.groupId);
+        const current = getCard(db, id);
+        if (!current) throw new NotFoundError('Card not found');
         return updateCard(
           db,
           id,
           {
             thresholdCents: input.thresholdCents,
-            ...evaluateSilently(card.lastPriceCents, input.thresholdCents),
+            ...evaluateSilently(current.lastPriceCents, input.thresholdCents),
             ...groupPatch,
           },
           now,

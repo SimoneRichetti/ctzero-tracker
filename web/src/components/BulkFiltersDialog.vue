@@ -42,7 +42,7 @@ const excludedMode = ref<'add' | 'remove'>('add');
 const excludedIds = ref<number[]>([]);
 const expansions = ref<Expansion[]>([]);
 const expansionsError = ref<string | null>(null);
-const excludedSelect = useAdditiveSelectAll(excludedIds, expansions, (e) => e.name, (e) => e.id);
+const excludedSelect = useAdditiveSelectAll(excludedIds, expansions, 'name', 'id');
 const excludedModeOptions = [
   { label: 'Also exclude', value: 'add' },
   { label: 'Stop excluding', value: 'remove' },
@@ -59,6 +59,7 @@ watch(visible, (open) => {
   changeCondition.value = false;
   changeFoil.value = false;
   changeExcluded.value = false;
+  excludedMode.value = 'add';
   excludedIds.value = [];
   outcome.value = null;
   progress.value = { done: 0, total: 0 };
@@ -170,10 +171,8 @@ function abort() {
             selected-items-label="{0} selected"
             filter
             :loading="expansions.length === 0 && !expansionsError"
-            :select-all="excludedSelect.selectAll"
+            v-bind="excludedSelect"
             fluid
-            @filter="excludedSelect.onFilter"
-            @selectall-change="excludedSelect.onSelectAllChange"
           />
           <SelectedExpansions v-model="excludedIds" :options="expansions" />
         </div>

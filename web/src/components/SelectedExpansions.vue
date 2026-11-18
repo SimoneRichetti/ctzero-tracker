@@ -8,10 +8,15 @@ import { computed } from 'vue';
  * long selections stay readable and each one can be removed.
  */
 const model = defineModel<number[]>({ required: true });
-const props = defineProps<{ options: { id: number; name: string }[] }>();
+/** Field names as in the MultiSelect above: `name` and `id` unless given. */
+const props = withDefaults(defineProps<{ options: object[]; optionLabel?: string; optionValue?: string }>(), {
+  optionLabel: 'name',
+  optionValue: 'id',
+});
 
 const items = computed(() => {
-  const names = new Map(props.options.map((o) => [o.id, o.name]));
+  const field = (o: object, key: string) => (o as Record<string, unknown>)[key];
+  const names = new Map(props.options.map((o) => [Number(field(o, props.optionValue)), String(field(o, props.optionLabel))]));
   return model.value
     .map((id) => ({ id, name: names.get(id) ?? `#${id}` }))
     .sort((a, b) => a.name.localeCompare(b.name, 'en'));

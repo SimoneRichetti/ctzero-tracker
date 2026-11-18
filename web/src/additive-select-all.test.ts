@@ -8,14 +8,16 @@ const expansions = [
   { id: 3, name: 'Marvel Super Heroes' },
   { id: 4, name: 'Pokémon? No, Modern Horizons' },
 ];
-const label = (e: { name: string }) => e.name;
-const id = (e: { id: number }) => e.id;
 
 describe('matchingIds', () => {
   it('matches like PrimeVue "contains": case and accents ignored, empty = all', () => {
-    expect(matchingIds(expansions, label, id, 'star TREK')).toEqual([1, 2]);
-    expect(matchingIds(expansions, label, id, 'pokemon')).toEqual([4]);
-    expect(matchingIds(expansions, label, id, '  ')).toEqual([1, 2, 3, 4]);
+    expect(matchingIds(expansions, 'name', 'id', 'star TREK')).toEqual([1, 2]);
+    expect(matchingIds(expansions, 'name', 'id', 'pokemon')).toEqual([4]);
+    expect(matchingIds(expansions, 'name', 'id', '')).toEqual([1, 2, 3, 4]);
+  });
+
+  it('spaces count, as in PrimeVue: "trek " does not match a name ending in "Trek"', () => {
+    expect(matchingIds(expansions, 'name', 'id', 'trek ')).toEqual([2]);
   });
 });
 
@@ -29,25 +31,34 @@ describe('toggleVisible', () => {
 describe('useAdditiveSelectAll', () => {
   it('selecting all on two different searches keeps both', () => {
     const model = ref<number[]>([]);
-    const s = useAdditiveSelectAll(model, ref(expansions), label, id);
+    const s = useAdditiveSelectAll(model, ref(expansions), 'name', 'id');
     s.onFilter({ value: 'star trek' });
     expect(s.selectAll).toBe(false);
-    s.onSelectAllChange({ checked: true });
+    s.onSelectallChange({ checked: true });
     expect(s.selectAll).toBe(true);
     s.onFilter({ value: 'marvel' });
     expect(s.selectAll).toBe(false);
-    s.onSelectAllChange({ checked: true });
+    s.onSelectallChange({ checked: true });
     expect(model.value).toEqual([1, 2, 3]);
-    s.onSelectAllChange({ checked: false });
+    s.onSelectallChange({ checked: false });
     expect(model.value).toEqual([1, 2]);
   });
 
   it('with no option matching, select all is unchecked and changes nothing', () => {
     const model = ref<number[]>([1]);
-    const s = useAdditiveSelectAll(model, ref(expansions), label, id);
+    const s = useAdditiveSelectAll(model, ref(expansions), 'name', 'id');
     s.onFilter({ value: 'zzz' });
     expect(s.selectAll).toBe(false);
-    s.onSelectAllChange({ checked: true });
+    s.onSelectallChange({ checked: true });
     expect(model.value).toEqual([1]);
+  });
+
+  it('opening the dropdown forgets the previous filter (PrimeVue starts empty)', () => {
+    const model = ref<number[]>([]);
+    const s = useAdditiveSelectAll(model, ref(expansions), 'name', 'id');
+    s.onFilter({ value: 'marvel' });
+    s.onShow();
+    s.onSelectallChange({ checked: true });
+    expect(model.value).toEqual([1, 2, 3, 4]);
   });
 });

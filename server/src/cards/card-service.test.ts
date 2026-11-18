@@ -240,6 +240,20 @@ describe('excluded expansions', () => {
     expect(ct.products).not.toHaveBeenCalled();
   });
 
+  it('a sync landing during the lookup is not overwritten when nothing changes', async () => {
+    price = 4500;
+    const card = await service.create({ ...anyInput, excludedExpansionIds: [] });
+    expect(card).toMatchObject({ lastPriceCents: 4500, alertState: 'above' });
+    // The sync stores a price below the target and notifies while Scryfall is being called.
+    catalog.lookup.mockImplementationOnce(async () => {
+      updateCard(db, card.id, { lastPriceCents: 3500, alertState: 'below', lastNotifiedPriceCents: 3500 }, t0);
+      return anyLookup;
+    });
+    const { name: _n, ...anyUpdate } = anyInput;
+    await service.update(card.id, { ...anyUpdate, excludedExpansionIds: [99] });
+    expect(getCard(db, card.id)).toMatchObject({ lastPriceCents: 3500, alertState: 'below', lastNotifiedPriceCents: 3500 });
+  });
+
   it('preview applies them too', async () => {
     const { thresholdCents: _t, groupId: _g, ...filters } = anyInput;
     await service.preview(filters);
